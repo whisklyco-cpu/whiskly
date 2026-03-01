@@ -9,11 +9,13 @@ export default function BakerDashboard() {
   const router = useRouter()
   const [baker, setBaker] = useState<any>(null)
   const [orders, setOrders] = useState<any[]>([])
+  const [portfolio, setPortfolio] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadingPortfolio, setUploadingPortfolio] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
 
-  // Profile fields
   const [businessName, setBusinessName] = useState('')
   const [bio, setBio] = useState('')
   const [city, setCity] = useState('')
@@ -53,6 +55,14 @@ export default function BakerDashboard() {
         .order('created_at', { ascending: false })
 
       setOrders(ordersData || [])
+
+      const { data: portfolioData } = await supabase
+        .from('portfolio_items')
+        .select('*')
+        .eq('baker_id', bakerData.id)
+        .order('created_at', { ascending: false })
+
+      setPortfolio(portfolioData || [])
     }
     setLoading(false)
   }
@@ -67,9 +77,67 @@ export default function BakerDashboard() {
       zip_code: zipCode,
       starting_price: parseInt(startingPrice) || null,
       lead_time_days: parseInt(leadTime) || 7,
+      specialties: baker?.specialties || [],
     }).eq('id', baker.id)
     setSaving(false)
     alert('Profile saved!')
+  }
+
+  async function uploadPhoto(file: File) {
+    setUploading(true)
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${baker.id}.${fileExt}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('baker-photos')
+      .upload(fileName, file, { upsert: true })
+
+    if (!uploadError) {
+      const { data } = supabase.storage
+        .from('baker-photos')
+        .getPublicUrl(fileName)
+
+      await supabase.from('bakers')
+        .update({ profile_photo_url: data.publicUrl })
+        .eq('id', baker.id)
+
+      setBaker({ ...baker, profile_photo_url: data.publicUrl })
+    }
+    setUploading(false)
+  }
+
+  async function uploadPortfolioPhoto(file: File) {
+    setUploadingPortfolio(true)
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${baker.id}-${Date.now()}.${fileExt}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('baker-photos')
+      .upload(fileName, file, { upsert: true })
+
+    if (!uploadError) {
+      const { data } = supabase.storage
+        .from('baker-photos')
+        .getPublicUrl(fileName)
+
+      const { data: newItem } = await supabase
+        .from('portfolio_items')
+        .insert({
+          baker_id: baker.id,
+          image_url: data.publicUrl,
+          is_visible: true
+        })
+        .select()
+        .single()
+
+      if (newItem) setPortfolio([newItem, ...portfolio])
+    }
+    setUploadingPortfolio(false)
+  }
+
+  async function deletePortfolioPhoto(id: string) {
+    await supabase.from('portfolio_items').delete().eq('id', id)
+    setPortfolio(portfolio.filter(p => p.id !== id))
   }
 
   async function updateOrderStatus(orderId: string, status: string) {
@@ -96,7 +164,7 @@ export default function BakerDashboard() {
 
       {/* Navbar */}
       <nav className="flex items-center justify-between px-8 py-4 bg-white shadow-sm">
-        <Link href="/" className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>Whiskly</Link>
+        <Link href="/" className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>🎂 Whiskly</Link>
         <p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>Baker Dashboard</p>
         <div className="flex items-center gap-3">
           <Link href={`/bakers/${baker?.id}`} className="px-4 py-2 text-sm rounded-lg border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
@@ -134,7 +202,7 @@ export default function BakerDashboard() {
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6">
-          {['overview', 'orders', 'profile'].map((tab) => (
+          {['overview', 'orders', 'profile', 'gallery'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -220,40 +288,149 @@ export default function BakerDashboard() {
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <h2 className="text-lg font-bold mb-6" style={{ color: '#2d1a0e' }}>Edit Profile</h2>
             <div className="flex flex-col gap-4 max-w-lg">
+
+              {/* Profile Photo */}
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>Business Name</label>
-                <input value={businessName} onChange={e => setBusinessName(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc' }} />
+                <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Profile Photo</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#f5f0eb' }}>
+                    {baker?.profile_photo_url ? (
+                      <img src={baker.profile_photo_url} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-2xl">🎂</span>
+                    )}
+                  </div>
+                  <div>
+                    <label className="cursor-pointer px-4 py-2 rounded-lg text-sm font-semibold border inline-block" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
+                      {uploading ? 'Uploading...' : 'Upload Photo'}
+                      <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadPhoto(e.target.files[0]) }} />
+                    </label>
+                    <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>JPG, PNG — shows on your public profile</p>
+                  </div>
+                </div>
               </div>
+
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>Bio</label>
-                <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc' }} />
+                <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Business Name</label>
+                <input value={businessName} onChange={e => setBusinessName(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
               </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Bio</label>
+                <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+              </div>
+
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>City</label>
-                  <input value={city} onChange={e => setCity(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc' }} />
+                  <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>City</label>
+                  <input value={city} onChange={e => setCity(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                 </div>
                 <div className="w-20">
-                  <label className="block text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>State</label>
-                  <input value={state} onChange={e => setState(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc' }} />
+                  <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>State</label>
+                  <input value={state} onChange={e => setState(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                 </div>
               </div>
+
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>Starting Price ($)</label>
-                  <input value={startingPrice} onChange={e => setStartingPrice(e.target.value)} type="number" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc' }} />
+                  <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Starting Price ($)</label>
+                  <input value={startingPrice} onChange={e => setStartingPrice(e.target.value)} type="number" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>Lead Time (days)</label>
-                  <input value={leadTime} onChange={e => setLeadTime(e.target.value)} type="number" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc' }} />
+                  <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Lead Time (days)</label>
+                  <input value={leadTime} onChange={e => setLeadTime(e.target.value)} type="number" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                 </div>
               </div>
+
+              {/* Specialties */}
+              <div>
+                <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Specialties</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Wedding Cakes','Birthday Cakes','Custom Cookies','Cupcakes','Kids Party Cakes','Vegan/Gluten Free','Alcohol Infused','Breads','Cheesecakes','Macarons','Custom Dessert Boxes'].map(s => (
+                    <button
+                      key={s}
+                      onClick={() => {
+                        const current = baker?.specialties || []
+                        const updated = current.includes(s) ? current.filter((x: string) => x !== s) : [...current, s]
+                        setBaker({ ...baker, specialties: updated })
+                      }}
+                      className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
+                      style={{
+                        backgroundColor: baker?.specialties?.includes(s) ? '#2d1a0e' : '#f5f0eb',
+                        color: baker?.specialties?.includes(s) ? 'white' : '#2d1a0e',
+                        border: `1px solid ${baker?.specialties?.includes(s) ? '#2d1a0e' : '#e0d5cc'}`
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <button onClick={saveProfile} disabled={saving} className="py-3 rounded-lg text-white font-semibold" style={{ backgroundColor: '#2d1a0e', opacity: saving ? 0.7 : 1 }}>
                 {saving ? 'Saving...' : 'Save Profile'}
               </button>
             </div>
           </div>
         )}
+
+        {/* Gallery Tab */}
+        {activeTab === 'gallery' && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Portfolio Gallery</h2>
+                <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>{portfolio.length}/10 photos · Customers see this on your profile</p>
+              </div>
+              {portfolio.length < 10 && (
+                <label className="cursor-pointer px-4 py-2 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>
+                  {uploadingPortfolio ? 'Uploading...' : '+ Add Photo'}
+                  <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />
+                </label>
+              )}
+            </div>
+
+            {portfolio.length === 0 ? (
+              <div className="text-center py-16 border-2 border-dashed rounded-2xl" style={{ borderColor: '#e0d5cc' }}>
+                <p className="text-4xl mb-3">📸</p>
+                <p className="font-semibold mb-1" style={{ color: '#2d1a0e' }}>No photos yet</p>
+                <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Upload your best work to attract customers</p>
+                <label className="cursor-pointer px-6 py-3 rounded-xl text-white text-sm font-semibold inline-block" style={{ backgroundColor: '#2d1a0e' }}>
+                  {uploadingPortfolio ? 'Uploading...' : 'Upload Your First Photo'}
+                  <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />
+                </label>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-4">
+                {portfolio.map((item) => (
+                  <div key={item.id} className="relative group rounded-xl overflow-hidden" style={{ aspectRatio: '1' }}>
+                    <img src={item.image_url} alt="Portfolio" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 flex items-center justify-center transition-all" style={{ backgroundColor: 'rgba(0,0,0,0)', backdropFilter: 'none' }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.4)')}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0)')}
+                    >
+                      <button
+                        onClick={() => deletePortfolioPhoto(item.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-all"
+                        style={{ backgroundColor: '#991b1b' }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {portfolio.length < 10 && (
+                  <label className="cursor-pointer rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2" style={{ borderColor: '#e0d5cc', aspectRatio: '1' }}>
+                    <span className="text-2xl" style={{ color: '#5c3d2e' }}>+</span>
+                    <span className="text-xs font-medium" style={{ color: '#5c3d2e' }}>Add photo</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </main>
   )
