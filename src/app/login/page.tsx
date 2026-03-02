@@ -29,11 +29,11 @@ export default function Login() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: baker } = await supabase.from('bakers').select('id').eq('user_id', user?.id).single()
 
-    if (baker) {
-      router.push('/dashboard/baker')
-    } else {
-      router.push('/')
-    }
+if (baker) {
+  router.push('/dashboard/baker')
+} else {
+  router.push('/bakers')
+}
   }
 
   return (
@@ -89,7 +89,9 @@ export default function Login() {
 
         <p className="text-center text-sm mt-6" style={{ color: '#5c3d2e' }}>
           Don't have an account?{' '}
-          <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>Join as a Baker</Link>
+          <Link href="/signup" className="font-semibold underline" style={{ color: '#2d1a0e' }}>Create a customer account</Link>
+        {' or '}
+        <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>join as a baker</Link>
         </p>
       </div>
     </main>
