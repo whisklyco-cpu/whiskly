@@ -25,14 +25,13 @@ export default function BakerDashboard() {
   const [leadTime, setLeadTime] = useState('7')
 
   useEffect(() => {
-  loadDashboard()
-  // Handle Stripe Connect return
-  const params = new URLSearchParams(window.location.search)
-  if (params.get('stripe') === 'success') {
-    alert('Stripe connected successfully! You can now receive payments.')
-    window.history.replaceState({}, '', '/dashboard/baker')
-  }
-}, [])
+    loadDashboard()
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('stripe') === 'success') {
+      alert('Stripe connected successfully! You can now receive payments.')
+      window.history.replaceState({}, '', '/dashboard/baker')
+    }
+  }, [])
 
   async function loadDashboard() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -126,16 +125,18 @@ export default function BakerDashboard() {
     await supabase.auth.signOut()
     router.push('/')
   }
-async function connectStripe() {
-  const { data: { user } } = await supabase.auth.getUser()
-  const res = await fetch('/api/stripe/connect', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bakerId: baker.id, email: user?.email })
-  })
-  const data = await res.json()
-  if (data.url) window.location.href = data.url
-}
+
+  async function connectStripe() {
+    const { data: { user } } = await supabase.auth.getUser()
+    const res = await fetch('/api/stripe/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bakerId: baker.id, email: user?.email })
+    })
+    const data = await res.json()
+    if (data.url) window.location.href = data.url
+  }
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
       <p style={{ color: '#2d1a0e' }}>Loading your dashboard...</p>
@@ -273,37 +274,34 @@ async function connectStripe() {
                         : 'Standard listing · 3 photos · Basic profile'}
                     </p>
                   </div>
-                  {/* Stripe Connect */}
-<div className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
-  <div className="flex items-center justify-between">
-    <div>
-      <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>
-        {baker?.stripe_account_id ? '✅ Stripe Connected' : '💳 Connect Stripe'}
-      </p>
-      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
-        {baker?.stripe_account_id
-          ? 'You can receive payments from customers'
-          : 'Required to receive payments on Whiskly'}
-      </p>
-    </div>
-    {!baker?.stripe_account_id && (
-      <button
-        onClick={connectStripe}
-        className="px-4 py-2 rounded-lg text-white text-xs font-semibold"
-        style={{ backgroundColor: '#635bff' }}
-      >
-        Connect →
-      </button>
-    )}
-  </div>
-</div>
                   {baker?.tier !== 'pro' && (
-                    <button
-                      onClick={() => alert('Stripe billing coming soon!')}
+                    <button onClick={() => alert('Stripe billing coming soon!')}
                       className="px-4 py-2 rounded-lg text-white text-xs font-semibold"
-                      style={{ backgroundColor: '#8B4513' }}
-                    >
+                      style={{ backgroundColor: '#8B4513' }}>
                       Upgrade to Pro
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Stripe Connect */}
+              <div className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>
+                      {baker?.stripe_account_id ? '✅ Stripe Connected' : '💳 Connect Stripe'}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
+                      {baker?.stripe_account_id
+                        ? 'You can receive payments from customers'
+                        : 'Required to receive payments on Whiskly'}
+                    </p>
+                  </div>
+                  {!baker?.stripe_account_id && (
+                    <button onClick={connectStripe}
+                      className="px-4 py-2 rounded-lg text-white text-xs font-semibold"
+                      style={{ backgroundColor: '#635bff' }}>
+                      Connect →
                     </button>
                   )}
                 </div>
@@ -389,8 +387,7 @@ async function connectStripe() {
                 <button
                   onClick={() => setBaker({ ...baker, rush_orders_available: !baker?.rush_orders_available })}
                   className="flex items-center gap-3 p-3 rounded-xl w-full text-left"
-                  style={{ backgroundColor: '#f5f0eb' }}
-                >
+                  style={{ backgroundColor: '#f5f0eb' }}>
                   <div className="w-10 h-6 rounded-full transition-all relative flex-shrink-0"
                     style={{ backgroundColor: baker?.rush_orders_available ? '#2d1a0e' : '#e0d5cc' }}>
                     <div className="w-4 h-4 bg-white rounded-full absolute top-1 transition-all"
@@ -414,11 +411,11 @@ async function connectStripe() {
                   rows={3}
                   placeholder="e.g. Full refund if cancelled 2+ weeks out. 50% refund within 1 week. No refund within 48 hours."
                   className="w-full px-4 py-3 rounded-lg border text-sm"
-                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
-                />
+                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
               </div>
 
-              <button onClick={saveProfile} disabled={saving} className="py-3 rounded-lg text-white font-semibold" style={{ backgroundColor: '#2d1a0e', opacity: saving ? 0.7 : 1 }}>
+              <button onClick={saveProfile} disabled={saving} className="py-3 rounded-lg text-white font-semibold"
+                style={{ backgroundColor: '#2d1a0e', opacity: saving ? 0.7 : 1 }}>
                 {saving ? 'Saving...' : 'Save Profile'}
               </button>
             </div>
@@ -458,13 +455,17 @@ async function connectStripe() {
                 {portfolio.map((item) => (
                   <div key={item.id} className="relative group rounded-xl overflow-hidden" style={{ aspectRatio: '1' }}>
                     <img src={item.image_url} alt="Portfolio" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
-                      <button onClick={() => deletePortfolioPhoto(item.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#991b1b' }}>Delete</button>
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                      style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
+                      <button onClick={() => deletePortfolioPhoto(item.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+                        style={{ backgroundColor: '#991b1b' }}>Delete</button>
                     </div>
                   </div>
                 ))}
                 {portfolio.length < maxPhotos && (
-                  <label className="cursor-pointer rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2" style={{ borderColor: '#e0d5cc', aspectRatio: '1' }}>
+                  <label className="cursor-pointer rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2"
+                    style={{ borderColor: '#e0d5cc', aspectRatio: '1' }}>
                     <span className="text-2xl" style={{ color: '#5c3d2e' }}>+</span>
                     <span className="text-xs font-medium" style={{ color: '#5c3d2e' }}>Add photo</span>
                     <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />

@@ -25,11 +25,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: accountLink.url, accountId: account.id })
   } catch (err: any) {
+    console.error('Stripe error:', err.message)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
-```
-
-Then add your app URL to `.env.local`:
-```
-NEXT_PUBLIC_APP_URL=http://localhost:3000
