@@ -9,7 +9,7 @@ export async function POST(req: Request) {
 
     if (type === 'new_order') {
       await resend.emails.send({
-        from: 'Whiskly <notifications@whiskly.vercel.app>',
+        from: 'Whiskly <onboarding@resend.dev>',
         to: bakerEmail,
         subject: 'New booking request on Whiskly!',
         html: `
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
 
     if (type === 'order_confirmed') {
       await resend.emails.send({
-        from: 'Whiskly <notifications@whiskly.vercel.app>',
+        from: 'Whiskly <onboarding@resend.dev>',
         to: bakerEmail,
         subject: 'Your order has been confirmed!',
         html: `
