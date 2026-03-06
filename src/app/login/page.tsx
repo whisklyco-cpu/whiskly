@@ -32,7 +32,7 @@ export default function Login() {
 if (baker) {
   router.push('/dashboard/baker')
 } else {
-  router.push('/bakers')
+  router.push('/dashboard/customer')
 }
   }
 
