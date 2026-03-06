@@ -45,17 +45,34 @@ export default function BakerProfile() {
     if (!form.customer_name || !form.email || !form.event_type || !form.event_date) return
     setSubmitting(true)
     await supabase.from('orders').insert({
-      baker_id: baker.id,
-      customer_name: form.customer_name,
-      customer_email: form.email,
-      event_type: form.event_type,
-      event_date: form.event_date,
-      budget: parseFloat(form.budget) || 0,
-      item_description: form.item_description,
-      status: 'pending'
-    })
-    setSubmitted(true)
-    setSubmitting(false)
+  baker_id: baker.id,
+  customer_name: form.customer_name,
+  customer_email: form.email,
+  event_type: form.event_type,
+  event_date: form.event_date,
+  budget: parseFloat(form.budget) || 0,
+  item_description: form.item_description,
+  status: 'pending'
+})
+
+// Send email notification to baker
+await fetch('/api/email', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    type: 'new_order',
+    bakerEmail: baker.email,
+    bakerName: baker.business_name,
+    customerName: form.customer_name,
+    eventType: form.event_type,
+    eventDate: form.event_date,
+    budget: form.budget,
+    description: form.item_description,
+  })
+})
+
+setSubmitted(true)
+setSubmitting(false)
   }
 
   if (loading) return (
