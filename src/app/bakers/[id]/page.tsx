@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import Navbar from '@/components/Navbar'
 
 export default function BakerProfile() {
   const { id } = useParams()
@@ -17,25 +18,17 @@ export default function BakerProfile() {
     customer_name: '', email: '', event_type: '', event_date: '', budget: '', item_description: ''
   })
 
-  useEffect(() => {
-    loadBaker()
-  }, [id])
+  useEffect(() => { loadBaker() }, [id])
 
   async function loadBaker() {
     const { data: bakerData } = await supabase
-      .from('bakers')
-      .select('*')
-      .eq('id', id)
-      .single()
+      .from('bakers').select('*').eq('id', id).single()
 
     if (bakerData) {
       setBaker(bakerData)
       const { data: portfolioData } = await supabase
-        .from('portfolio_items')
-        .select('*')
-        .eq('baker_id', id)
-        .eq('is_visible', true)
-        .order('created_at', { ascending: false })
+        .from('portfolio_items').select('*').eq('baker_id', id)
+        .eq('is_visible', true).order('created_at', { ascending: false })
       setPortfolio(portfolioData || [])
     }
     setLoading(false)
@@ -44,35 +37,35 @@ export default function BakerProfile() {
   async function handleSubmit() {
     if (!form.customer_name || !form.email || !form.event_type || !form.event_date) return
     setSubmitting(true)
+
     await supabase.from('orders').insert({
-  baker_id: baker.id,
-  customer_name: form.customer_name,
-  customer_email: form.email,
-  event_type: form.event_type,
-  event_date: form.event_date,
-  budget: parseFloat(form.budget) || 0,
-  item_description: form.item_description,
-  status: 'pending'
-})
+      baker_id: baker.id,
+      customer_name: form.customer_name,
+      customer_email: form.email,
+      event_type: form.event_type,
+      event_date: form.event_date,
+      budget: parseFloat(form.budget) || 0,
+      item_description: form.item_description,
+      status: 'pending'
+    })
 
-// Send email notification to baker
-await fetch('/api/email', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    type: 'new_order',
-    bakerEmail: baker.email,
-    bakerName: baker.business_name,
-    customerName: form.customer_name,
-    eventType: form.event_type,
-    eventDate: form.event_date,
-    budget: form.budget,
-    description: form.item_description,
-  })
-})
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'new_order',
+        bakerEmail: baker.email,
+        bakerName: baker.business_name,
+        customerName: form.customer_name,
+        eventType: form.event_type,
+        eventDate: form.event_date,
+        budget: form.budget,
+        description: form.item_description,
+      })
+    })
 
-setSubmitted(true)
-setSubmitting(false)
+    setSubmitted(true)
+    setSubmitting(false)
   }
 
   if (loading) return (
@@ -90,24 +83,21 @@ setSubmitting(false)
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
 
-      {/* Navbar */}
-     <Navbar />
-import Navbar from '@/components/Navbar'
+      <Navbar />
+
       <div className="max-w-5xl mx-auto px-6 py-10">
         <div className="grid grid-cols-3 gap-8">
 
-          {/* Left Column - Main Content */}
+          {/* Left Column */}
           <div className="col-span-2 flex flex-col gap-6">
 
             {/* Header Card */}
             <div className="bg-white rounded-2xl p-8 shadow-sm">
               <div className="flex items-start gap-5">
                 <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
-                  {baker.profile_photo_url ? (
-                    <img src={baker.profile_photo_url} alt={baker.business_name} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-3xl">🎂</span>
-                  )}
+                  {baker.profile_photo_url
+                    ? <img src={baker.profile_photo_url} alt={baker.business_name} className="w-full h-full object-cover" />
+                    : <span className="text-3xl">🎂</span>}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -122,20 +112,14 @@ import Navbar from '@/components/Navbar'
                   <p className="text-sm mb-3" style={{ color: '#5c3d2e' }}>📍 {baker.city}, {baker.state}</p>
                   <div className="flex flex-wrap gap-2">
                     {baker.starting_price && (
-                      <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>
-                        Starting from ${baker.starting_price}
-                      </span>
+                      <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>Starting from ${baker.starting_price}</span>
                     )}
                     {baker.lead_time_days && (
-                      <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>
-                        {baker.lead_time_days} day lead time
-                      </span>
+                      <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>{baker.lead_time_days} day lead time</span>
                     )}
                     {baker.instagram_handle && (
-  <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>
-    @{baker.instagram_handle}
-  </span>
-)}
+                      <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>@{baker.instagram_handle}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -169,9 +153,7 @@ import Navbar from '@/components/Navbar'
                 <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Specialties</h2>
                 <div className="flex flex-wrap gap-2">
                   {baker.specialties.map((s: string) => (
-                    <span key={s} className="px-4 py-2 rounded-full text-sm font-medium" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>
-                      {s}
-                    </span>
+                    <span key={s} className="px-4 py-2 rounded-full text-sm font-medium" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>{s}</span>
                   ))}
                 </div>
               </div>
@@ -183,9 +165,7 @@ import Navbar from '@/components/Navbar'
                 <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Dietary Options</h2>
                 <div className="flex flex-wrap gap-2">
                   {baker.dietary_tags.map((tag: string) => (
-                    <span key={tag} className="px-4 py-2 rounded-full text-sm font-medium" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>
-                      ✓ {tag}
-                    </span>
+                    <span key={tag} className="px-4 py-2 rounded-full text-sm font-medium" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>✓ {tag}</span>
                   ))}
                 </div>
               </div>
@@ -195,26 +175,10 @@ import Navbar from '@/components/Navbar'
             <div className="bg-white rounded-2xl p-8 shadow-sm">
               <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Service Details</h2>
               <div className="grid grid-cols-2 gap-4">
-                {baker.delivery_available && (
-                  <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>
-                    <span>🚗</span> Delivery available
-                  </div>
-                )}
-                {baker.pickup_available && (
-                  <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>
-                    <span>📦</span> Pickup available
-                  </div>
-                )}
-                {baker.rush_orders_available && (
-                  <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>
-                    <span>⚡</span> Rush orders accepted
-                  </div>
-                )}
-                {baker.minimum_order > 0 && (
-                  <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>
-                    <span>💵</span> ${baker.minimum_order} minimum
-                  </div>
-                )}
+                {baker.delivery_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>🚗</span> Delivery available</div>}
+                {baker.pickup_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>📦</span> Pickup available</div>}
+                {baker.rush_orders_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>⚡</span> Rush orders accepted</div>}
+                {baker.minimum_order > 0 && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>💵</span> ${baker.minimum_order} minimum</div>}
                 {baker.days_available?.length > 0 && (
                   <div className="flex items-center gap-2 text-sm col-span-2" style={{ color: '#5c3d2e' }}>
                     <span>📅</span> Available: {baker.days_available.join(', ')}
@@ -227,7 +191,6 @@ import Navbar from '@/components/Navbar'
                 )}
               </div>
             </div>
-
           </div>
 
           {/* Right Column - Booking Form */}
@@ -243,37 +206,24 @@ import Navbar from '@/components/Navbar'
                 <>
                   <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Send a Request</h3>
                   <p className="text-xs mb-5" style={{ color: '#5c3d2e' }}>No payment yet — just start the conversation</p>
-
                   <div className="flex flex-col gap-3">
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Your Name *</label>
-                      <input
-                        value={form.customer_name}
-                        onChange={e => setForm({ ...form, customer_name: e.target.value })}
-                        placeholder="Alexandria Johnson"
-                        className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
-                      />
+                      <input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })}
+                        placeholder="Jane Smith" className="w-full px-3 py-2.5 rounded-lg border text-sm"
+                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Email *</label>
-                      <input
-                        type="email"
-                        value={form.email}
-                        onChange={e => setForm({ ...form, email: e.target.value })}
-                        placeholder="you@example.com"
-                        className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
-                      />
+                      <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
+                        placeholder="you@example.com" className="w-full px-3 py-2.5 rounded-lg border text-sm"
+                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Event Type *</label>
-                      <select
-                        value={form.event_type}
-                        onChange={e => setForm({ ...form, event_type: e.target.value })}
+                      <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value })}
                         className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
-                      >
+                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
                         <option value="">Select event</option>
                         <option>Birthday</option>
                         <option>Wedding</option>
@@ -287,43 +237,27 @@ import Navbar from '@/components/Navbar'
                     </div>
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Event Date *</label>
-                      <input
-                        type="date"
-                        value={form.event_date}
-                        onChange={e => setForm({ ...form, event_date: e.target.value })}
+                      <input type="date" value={form.event_date} onChange={e => setForm({ ...form, event_date: e.target.value })}
                         className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
-                      />
+                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Budget ($)</label>
-                      <input
-                        type="number"
-                        value={form.budget}
-                        onChange={e => setForm({ ...form, budget: e.target.value })}
-                        placeholder="150"
-                        className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
-                      />
+                      <input type="number" value={form.budget} onChange={e => setForm({ ...form, budget: e.target.value })}
+                        placeholder="150" className="w-full px-3 py-2.5 rounded-lg border text-sm"
+                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Tell them what you want</label>
-                      <textarea
-                        value={form.item_description}
-                        onChange={e => setForm({ ...form, item_description: e.target.value })}
-                        rows={3}
-                        placeholder="3 tier chocolate cake with gold details, serves 50..."
+                      <textarea value={form.item_description} onChange={e => setForm({ ...form, item_description: e.target.value })}
+                        rows={3} placeholder="3 tier chocolate cake with gold details, serves 50..."
                         className="w-full px-3 py-2.5 rounded-lg border text-sm resize-none"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
-                      />
+                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
-                    <button
-                      onClick={handleSubmit}
-                      disabled={submitting}
+                    <button onClick={handleSubmit} disabled={submitting}
                       className="w-full py-3 rounded-xl text-white font-semibold text-sm"
-                      style={{ backgroundColor: '#2d1a0e', opacity: submitting ? 0.7 : 1 }}
-                    >
-                      {submitting ? 'Sending...' : `Request ${baker.business_name}`}
+                      style={{ backgroundColor: '#2d1a0e', opacity: submitting ? 0.7 : 1 }}>
+                      {submitting ? 'Sending...' : 'Request ' + baker.business_name}
                     </button>
                     <p className="text-xs text-center" style={{ color: '#5c3d2e' }}>No payment required to send a request</p>
                   </div>
@@ -331,11 +265,9 @@ import Navbar from '@/components/Navbar'
               )}
             </div>
           </div>
-
         </div>
       </div>
 
-      {/* Footer */}
       <footer className="text-center py-8 mt-10" style={{ backgroundColor: '#2d1a0e' }}>
         <p className="text-sm" style={{ color: '#e0d5cc' }}>© 2026 Whiskly. All rights reserved.</p>
       </footer>
