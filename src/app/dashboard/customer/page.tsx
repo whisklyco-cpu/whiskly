@@ -139,34 +139,34 @@ export default function CustomerDashboard() {
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
-            <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{pending.length}</p>
-            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>⏳ Pending</p>
-          </div>
-          <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
-            <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{confirmed.length}</p>
-            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>✅ Confirmed</p>
-          </div>
-          <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
-            <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{savedBakers.length}</p>
-            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>❤️ Saved Bakers</p>
-          </div>
-        </div>
+<div className="grid grid-cols-3 gap-4 mb-8">
+  <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
+    <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{pending.length}</p>
+    <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Pending</p>
+  </div>
+  <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
+    <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{confirmed.length}</p>
+    <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Confirmed</p>
+  </div>
+  <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
+    <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{savedBakers.length}</p>
+    <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Saved Bakers</p>
+  </div>
+</div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          {['orders', 'saved', 'nearby', 'account'].map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className="px-5 py-2 rounded-lg text-sm font-semibold capitalize transition-all"
-              style={{
-                backgroundColor: activeTab === tab ? '#2d1a0e' : 'white',
-                color: activeTab === tab ? 'white' : '#2d1a0e'
-              }}>
-              {tab === 'nearby' ? '📍 Nearby' : tab === 'saved' ? '❤️ Saved' : tab === 'orders' ? '📦 Orders' : '👤 Account'}
-            </button>
-          ))}
-        </div>
+       {/* Tabs */}
+<div className="flex gap-2 mb-6">
+  {['orders', 'saved', 'nearby', 'account'].map(tab => (
+    <button key={tab} onClick={() => setActiveTab(tab)}
+      className="px-5 py-2 rounded-lg text-sm font-semibold capitalize transition-all"
+      style={{
+        backgroundColor: activeTab === tab ? '#2d1a0e' : 'white',
+        color: activeTab === tab ? 'white' : '#2d1a0e'
+      }}>
+      {tab === 'nearby' ? 'Nearby' : tab === 'saved' ? 'Saved Bakers' : tab === 'orders' ? 'My Orders' : 'Account'}
+    </button>
+  ))}
+</div>
 
         {/* Orders Tab */}
         {activeTab === 'orders' && (
@@ -204,11 +204,11 @@ export default function CustomerDashboard() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <span className="px-3 py-1 text-xs font-semibold rounded-full" style={{
-                          backgroundColor: order.status === 'confirmed' ? '#dcfce7' : order.status === 'declined' ? '#fee2e2' : '#fef9c3',
-                          color: order.status === 'confirmed' ? '#166534' : order.status === 'declined' ? '#991b1b' : '#854d0e'
-                        }}>
-                          {order.status === 'confirmed' ? '✓ Confirmed' : order.status === 'declined' ? '✗ Declined' : '⏳ Pending'}
-                        </span>
+  backgroundColor: order.status === 'confirmed' ? '#dcfce7' : order.status === 'declined' ? '#fee2e2' : '#fef9c3',
+  color: order.status === 'confirmed' ? '#166534' : order.status === 'declined' ? '#991b1b' : '#854d0e'
+}}>
+  {order.status === 'confirmed' ? 'Confirmed' : order.status === 'declined' ? 'Declined' : 'Pending'}
+</span>
                         {daysUntil > 0 && order.status !== 'declined' && (
                           <p className="text-xs mt-1 font-semibold" style={{ color: daysUntil <= 7 ? '#dc2626' : '#5c3d2e' }}>
                             {daysUntil === 1 ? 'Tomorrow!' : daysUntil + ' days away'}
