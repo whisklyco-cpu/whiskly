@@ -15,28 +15,24 @@ export default function CustomerDashboard() {
   useEffect(() => { loadDashboard() }, [])
 
   async function loadDashboard() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/login'); return }
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) { router.push('/login'); return }
 
-    // Check if they're a baker, redirect if so
-    const { data: bakerData } = await supabase.from('bakers').select('id').eq('user_id', user.id).single()
-    if (bakerData) { router.push('/dashboard/baker'); return }
+  const { data: bakerData } = await supabase.from('bakers').select('id').eq('user_id', user.id).maybeSingle()
+  if (bakerData) { router.push('/dashboard/baker'); return }
 
-    const { data: customerData } = await supabase.from('customers').select('*').eq('user_id', user.id).single()
-    if (customerData) {
-      setCustomer(customerData)
-
-      // Fetch orders with baker info
-      const { data: ordersData } = await supabase
-        .from('orders')
-        .select('*, bakers(business_name, profile_photo_url, city, state)')
-        .eq('customer_email', customerData.email)
-        .order('created_at', { ascending: false })
-
-      setOrders(ordersData || [])
-    }
-    setLoading(false)
+  const { data: customerData } = await supabase.from('customers').select('*').eq('user_id', user.id).maybeSingle()
+  if (customerData) {
+    setCustomer(customerData)
+    const { data: ordersData } = await supabase
+      .from('orders')
+      .select('*, bakers(business_name, profile_photo_url, city, state)')
+      .eq('customer_email', customerData.email)
+      .order('created_at', { ascending: false })
+    setOrders(ordersData || [])
   }
+  setLoading(false)
+}
 
   async function handleSignOut() {
     await supabase.auth.signOut()

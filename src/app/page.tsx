@@ -1,41 +1,72 @@
-import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
-import HeroSection from '@/components/HeroSection'
+'use client'
 
-export default async function Home() {
-  const { data: featuredBaker } = await supabase
-    .from('bakers')
-    .select('id, business_name, city, state, specialties, profile_photo_url')
-    .eq('is_featured', true)
-    .eq('is_active', true)
-    .single()
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import Navbar from '@/components/Navbar'
+
+export default function Home() {
+  const [featuredBaker, setFeaturedBaker] = useState<any>(null)
+
+  useEffect(() => {
+    async function loadFeatured() {
+      const { data } = await supabase
+        .from('bakers')
+        .select('id, business_name, city, state, specialties, profile_photo_url')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+      setFeaturedBaker(data)
+    }
+    loadFeatured()
+  }, [])
 
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
 
-      {/* Navbar */}
-      <nav className="flex items-center justify-between px-8 py-4 bg-white shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">🎂</span>
-          <span className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>Whiskly</span>
-        </div>
-        <div className="flex items-center gap-6 text-sm font-medium" style={{ color: '#2d1a0e' }}>
-          <Link href="/bakers">Find a Baker</Link>
-          <Link href="/join">Join as Baker</Link>
-          <Link href="/bakers">Browse Bakers</Link>
-          <Link href="/for-bakers">For Bakers</Link>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href="/login" className="px-4 py-2 text-sm font-medium rounded-lg border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
-            Sign In
-          </Link>
-          <Link href="/join" className="px-4 py-2 text-sm font-medium rounded-lg text-white" style={{ backgroundColor: '#2d1a0e' }}>
-            Get Started
-          </Link>
-        </div>
-      </nav>
+      <Navbar />
 
-      <HeroSection featuredBaker={featuredBaker} />
+      {/* Hero */}
+      <section className="px-16 py-24 max-w-7xl mx-auto">
+        <div className="max-w-2xl">
+          <h1 className="text-5xl font-bold leading-tight mb-6" style={{ color: '#2d1a0e' }}>
+            Custom cakes made by bakers in your community.
+          </h1>
+          <p className="text-lg mb-8" style={{ color: '#5c3d2e' }}>
+            Browse local bakers, see clear pricing, and book with confidence. No more Instagram DMs or chasing quotes.
+          </p>
+          <div className="flex gap-4">
+            <Link href="/bakers" className="px-6 py-3 rounded-xl text-white font-semibold" style={{ backgroundColor: '#2d1a0e' }}>
+              Find a Baker
+            </Link>
+            <Link href="/join" className="px-6 py-3 rounded-xl font-semibold border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
+              Become a Baker
+            </Link>
+          </div>
+        </div>
+
+        {featuredBaker && (
+          <div className="mt-12 bg-white rounded-2xl p-6 shadow-sm max-w-sm">
+            <p className="text-xs font-semibold mb-3 uppercase tracking-wide" style={{ color: '#5c3d2e' }}>Featured Baker</p>
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0" style={{ backgroundColor: '#f5f0eb' }}>
+                {featuredBaker.profile_photo_url
+                  ? <img src={featuredBaker.profile_photo_url} alt="" className="w-full h-full object-cover" />
+                  : <div className="w-full h-full flex items-center justify-center text-2xl">🎂</div>}
+              </div>
+              <div>
+                <p className="font-bold" style={{ color: '#2d1a0e' }}>{featuredBaker.business_name}</p>
+                <p className="text-xs" style={{ color: '#5c3d2e' }}>📍 {featuredBaker.city}, {featuredBaker.state}</p>
+              </div>
+            </div>
+            <Link href={'/bakers/' + featuredBaker.id}
+              className="mt-4 block text-center py-2 rounded-lg text-sm font-semibold border"
+              style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
+              View Profile →
+            </Link>
+          </div>
+        )}
+      </section>
 
       {/* How It Works */}
       <section className="px-16 py-20" style={{ backgroundColor: '#f5f0eb' }}>
@@ -80,7 +111,6 @@ export default async function Home() {
             <div>
               <p className="font-semibold text-white mb-3">For Bakers</p>
               <div className="flex flex-col gap-2" style={{ color: '#c4a882' }}>
-                <Link href="/for-bakers">For Bakers</Link>
                 <Link href="/join">Join as Baker</Link>
               </div>
             </div>

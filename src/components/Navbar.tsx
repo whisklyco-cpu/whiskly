@@ -13,17 +13,23 @@ export default function Navbar() {
   useEffect(() => { checkUser() }, [])
 
   async function checkUser() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) { setLoading(false); return }
 
-    const { data: baker } = await supabase.from('bakers').select('id').eq('user_id', user.id).single()
-    if (baker) { setUserType('baker'); setLoading(false); return }
+  const { data: baker } = await supabase.from('bakers').select('id').eq('user_id', session.user.id).maybeSingle()
+  if (baker) { setUserType('baker'); setLoading(false); return }
 
-    const { data: customer } = await supabase.from('customers').select('id').eq('user_id', user.id).single()
-    if (customer) { setUserType('customer'); setLoading(false); return }
+  const { data: customer } = await supabase.from('customers').select('id').eq('user_id', session.user.id).maybeSingle()
+  if (customer) { setUserType('customer'); setLoading(false); return }
 
-    setLoading(false)
-  }
+  setLoading(false)
+}
+useEffect(() => {
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+    checkUser()
+  })
+  return () => subscription.unsubscribe()
+}, [])
 
   async function handleSignOut() {
     await supabase.auth.signOut()
