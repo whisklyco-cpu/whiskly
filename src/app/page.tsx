@@ -6,18 +6,21 @@ import { supabase } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
 
 export default function Home() {
-  const [featuredBakers, setFeaturedBakers] = useState<any[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [featuredBaker, setFeaturedBaker] = useState<any>(null)
   const [zip, setZip] = useState('')
 
   useEffect(() => {
+    setTimeout(() => setLoaded(true), 100)
     async function loadFeatured() {
       const { data } = await supabase
         .from('bakers')
-        .select('id, business_name, city, state, specialties, profile_photo_url, starting_price, is_cottage_baker, tier')
+        .select('id, business_name, city, state, specialties, profile_photo_url')
         .eq('is_active', true)
         .eq('profile_complete', true)
-        .limit(3)
-      setFeaturedBakers(data || [])
+        .limit(1)
+        .maybeSingle()
+      setFeaturedBaker(data)
     }
     loadFeatured()
   }, [])
@@ -27,109 +30,133 @@ export default function Home() {
       <Navbar />
 
       {/* Hero */}
-      <section style={{ background: 'linear-gradient(135deg, #2d1a0e 0%, #5c3d2e 100%)' }} className="px-8 py-24">
-        <div className="max-w-5xl mx-auto text-center">
-          <p className="text-sm font-semibold mb-4 uppercase tracking-widest" style={{ color: '#c4a882' }}>
-            The marketplace for custom baked goods
-          </p>
-          <h1 className="text-5xl font-bold leading-tight mb-6 text-white">
-            Find the perfect baker<br />for your next celebration.
+      <section className="flex flex-col md:flex-row items-center justify-between px-16 py-16 gap-12" style={{ maxWidth: '1280px', margin: '0 auto' }}>
+
+        {/* Left */}
+        <div className="max-w-xl transition-all duration-700"
+          style={{ opacity: loaded ? 1 : 0, transform: loaded ? 'translateY(0)' : 'translateY(24px)' }}>
+
+          <div className="inline-block px-3 py-1 rounded-full text-xs font-semibold mb-6"
+            style={{ backgroundColor: '#e8ddd4', color: '#2d1a0e' }}>
+            ✦ The marketplace for custom baked goods
+          </div>
+
+          <h1 className="text-5xl font-bold leading-tight mb-5"
+            style={{ color: '#2d1a0e', letterSpacing: '-0.02em' }}>
+            Book bakers with <br />
+            <span style={{ color: '#8B4513' }}>confidence.</span>
           </h1>
-          <p className="text-lg mb-10 max-w-xl mx-auto" style={{ color: '#e0c9b0' }}>
-            Browse local bakers, see real pricing, and book with confidence. No more Instagram DMs or chasing quotes.
+
+          <p className="text-base mb-8 leading-relaxed" style={{ color: '#5c3d2e' }}>
+            Browse local bakers, see clear pricing, and book in one place. No more Instagram DMs or scattered messages.
           </p>
 
           {/* Search Bar */}
-          <div className="flex gap-3 max-w-lg mx-auto">
-            <input
-              value={zip}
-              onChange={e => setZip(e.target.value)}
-              placeholder="Enter your ZIP code"
-              className="flex-1 px-5 py-3.5 rounded-xl text-sm font-medium"
-              style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
-            />
-            <Link href={'/bakers' + (zip ? '?zip=' + zip : '')}
-              className="px-6 py-3.5 rounded-xl font-semibold text-sm whitespace-nowrap"
-              style={{ backgroundColor: '#c4a882', color: '#2d1a0e' }}>
-              Find Bakers
+          <div className="bg-white rounded-2xl p-5 shadow-md mb-6">
+            <div className="flex gap-3 mb-3">
+              <input type="text" placeholder="What are you craving?"
+                className="flex-1 px-4 py-3 rounded-xl border text-sm"
+                style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+              <input type="text" placeholder="ZIP code" value={zip} onChange={e => setZip(e.target.value)}
+                className="w-32 px-4 py-3 rounded-xl border text-sm"
+                style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+            </div>
+            <Link href="/bakers"
+              className="flex items-center justify-center w-full py-3 rounded-xl text-white font-semibold text-sm"
+              style={{ backgroundColor: '#2d1a0e' }}>
+              Browse Bakers
             </Link>
           </div>
 
           {/* Trust badges */}
-          <div className="flex items-center justify-center gap-8 mt-10">
-            {['Verified Bakers', 'Secure Booking', 'Real Reviews'].map(badge => (
-              <div key={badge} className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#c4a882' }} />
-                <span className="text-sm" style={{ color: '#e0c9b0' }}>{badge}</span>
+          <div className="flex gap-6 text-xs font-medium" style={{ color: '#5c3d2e' }}>
+            {['Clear pricing', 'Structured booking', 'Secure payments'].map((badge, i) => (
+              <div key={i} className="flex items-center gap-1">
+                <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                  style={{ backgroundColor: '#2d1a0e' }}>✓</span>
+                {badge}
+              </div>
+            ))}
+          </div>
+
+          {/* CTA */}
+          <div className="flex gap-4 mt-8">
+            <Link href="/bakers" className="px-6 py-3 rounded-xl text-white font-semibold text-sm"
+              style={{ backgroundColor: '#2d1a0e' }}>Browse Bakers</Link>
+            <Link href="/join" className="px-6 py-3 rounded-xl font-semibold text-sm border"
+              style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Become a Baker →</Link>
+          </div>
+
+          {/* Stats */}
+          <div className="flex gap-8 mt-10 pt-8 border-t" style={{ borderColor: '#e0d5cc' }}>
+            {[['100+', 'Orders Placed'], ['25', 'Local Bakers'], ['$12K', 'Revenue Generated']].map(([num, label]) => (
+              <div key={label}>
+                <p className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>{num}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{label}</p>
               </div>
             ))}
           </div>
         </div>
-      </section>
 
-      {/* Featured Bakers */}
-      {featuredBakers.length > 0 && (
-        <section className="px-8 py-16 max-w-6xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>Featured Bakers</h2>
-              <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Talented bakers ready to take your order</p>
+        {/* Right - Image */}
+        <div className="relative flex-shrink-0 transition-all duration-1000"
+          style={{ opacity: loaded ? 1 : 0, transform: loaded ? 'translateY(0)' : 'translateY(32px)', transitionDelay: '200ms' }}>
+          <div style={{ animation: 'float 6s ease-in-out infinite' }}>
+            <div className="rounded-3xl overflow-hidden shadow-2xl relative" style={{ width: '480px', height: '560px' }}>
+              <img src="/hero.jpg"
+                alt="Beautiful custom cake" className="w-full h-full object-cover" />
+              <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(45,26,14,0.3) 0%, transparent 60%)' }} />
             </div>
-            <Link href="/bakers" className="text-sm font-semibold underline" style={{ color: '#2d1a0e' }}>
-              View all bakers →
-            </Link>
           </div>
-          <div className="grid grid-cols-3 gap-6">
-            {featuredBakers.map(baker => (
-              <Link key={baker.id} href={'/bakers/' + baker.id}>
-                <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all group">
-                  <div className="h-44 overflow-hidden relative" style={{ backgroundColor: '#f5f0eb' }}>
-                    {baker.profile_photo_url
-                      ? <img src={baker.profile_photo_url} alt={baker.business_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                      : <div className="w-full h-full flex items-center justify-center text-5xl">🎂</div>}
-                    {baker.tier === 'pro' && (
-                      <div className="absolute top-3 left-3 px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#2d1a0e', color: 'white' }}>Pro</div>
-                    )}
-                    {baker.is_cottage_baker && (
-                      <div className="absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Cottage</div>
-                    )}
+
+          {/* Featured Baker Card */}
+          {featuredBaker && (
+            <div className="absolute bg-white rounded-2xl px-5 py-4 shadow-xl"
+              style={{ bottom: '-16px', left: '-32px', animation: 'float 6s ease-in-out infinite', animationDelay: '1s' }}>
+              <Link href={'/bakers/' + featuredBaker.id}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center"
+                    style={{ backgroundColor: '#f5f0eb' }}>
+                    {featuredBaker.profile_photo_url
+                      ? <img src={featuredBaker.profile_photo_url} alt="" className="w-full h-full object-cover" />
+                      : <span className="text-xl">🎂</span>}
                   </div>
-                  <div className="p-5">
-                    <h3 className="font-bold mb-1" style={{ color: '#2d1a0e' }}>{baker.business_name}</h3>
-                    <p className="text-xs mb-3" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state}</p>
-                    {baker.specialties?.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {baker.specialties.slice(0, 2).map((s: string) => (
-                          <span key={s} className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>{s}</span>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between">
-                      {baker.starting_price
-                        ? <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>From ${baker.starting_price}</p>
-                        : <p className="text-sm" style={{ color: '#5c3d2e' }}>Quote based</p>}
-                      <span className="text-xs font-semibold" style={{ color: '#8B4513' }}>View Profile →</span>
-                    </div>
+                  <div>
+                    <p className="text-xs font-bold" style={{ color: '#2d1a0e' }}>{featuredBaker.business_name}</p>
+                    <p className="text-xs" style={{ color: '#5c3d2e' }}>
+                      {featuredBaker.specialties?.[0] || 'Custom Cakes'} · {featuredBaker.city}
+                    </p>
                   </div>
                 </div>
+                <div className="flex items-center gap-0.5 mt-2">
+                  {[1,2,3,4,5].map(i => <span key={i} className="text-xs" style={{ color: '#f59e0b' }}>★</span>)}
+                  <span className="text-xs ml-1" style={{ color: '#5c3d2e' }}>Featured Baker</span>
+                </div>
               </Link>
-            ))}
+            </div>
+          )}
+
+          {/* Verified badge */}
+          <div className="absolute bg-white rounded-2xl px-4 py-3 shadow-xl"
+            style={{ top: '-16px', right: '-16px', animation: 'float 6s ease-in-out infinite', animationDelay: '2s', opacity: loaded ? 1 : 0, transition: 'opacity 1s', transitionDelay: '700ms' }}>
+            <p className="text-xs font-bold" style={{ color: '#2d1a0e' }}>✓ Verified Platform</p>
+            <p className="text-xs" style={{ color: '#5c3d2e' }}>Trusted by local bakers</p>
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
       {/* How It Works */}
-      <section className="py-16" style={{ backgroundColor: 'white' }}>
-        <div className="max-w-5xl mx-auto px-8">
-          <h2 className="text-2xl font-bold text-center mb-2" style={{ color: '#2d1a0e' }}>How Whiskly Works</h2>
-          <p className="text-center text-sm mb-12" style={{ color: '#5c3d2e' }}>From craving to celebration in four simple steps.</p>
+      <section className="py-20" style={{ backgroundColor: 'white' }}>
+        <div className="px-16" style={{ maxWidth: '1280px', margin: '0 auto' }}>
+          <h2 className="text-3xl font-bold text-center mb-3" style={{ color: '#2d1a0e' }}>How It Works</h2>
+          <p className="text-center mb-12 text-sm" style={{ color: '#5c3d2e' }}>Getting your perfect custom cake is simple.</p>
           <div className="grid grid-cols-4 gap-6">
             {[
-              { num: '01', title: 'Browse & Discover', desc: 'Find local bakers and explore their portfolios and pricing.' },
-              { num: '02', title: 'Send a Request', desc: 'Share your event details, date, and budget directly.' },
+              { num: '01', title: 'Browse & Discover', desc: 'Find local bakers and explore their portfolios.' },
+              { num: '02', title: 'Send a Request', desc: 'Share your event details, date, and budget.' },
               { num: '03', title: 'Secure Your Order', desc: 'Pay a deposit through our secure checkout.' },
               { num: '04', title: 'Enjoy Your Cake', desc: 'Pick up your order and celebrate in style.' },
-            ].map((step) => (
+            ].map(step => (
               <div key={step.num} className="text-center">
                 <p className="text-3xl font-bold mb-3" style={{ color: '#e0d5cc' }}>{step.num}</p>
                 <p className="font-semibold mb-2 text-sm" style={{ color: '#2d1a0e' }}>{step.title}</p>
@@ -141,14 +168,13 @@ export default function Home() {
       </section>
 
       {/* Baker CTA */}
-      <section className="px-8 py-16">
-        <div className="max-w-4xl mx-auto rounded-2xl p-12 text-center" style={{ backgroundColor: '#2d1a0e' }}>
+      <section className="px-16 py-16" style={{ maxWidth: '1280px', margin: '0 auto' }}>
+        <div className="rounded-2xl p-12 text-center" style={{ backgroundColor: '#2d1a0e' }}>
           <h2 className="text-2xl font-bold text-white mb-3">Are you a baker?</h2>
           <p className="mb-8 text-sm max-w-md mx-auto" style={{ color: '#c4a882' }}>
-            Join Whiskly and reach customers who are actively looking for custom baked goods in your area.
+            Join Whiskly and reach customers actively looking for custom baked goods in your area.
           </p>
-          <Link href="/join"
-            className="inline-block px-8 py-3 rounded-xl font-semibold text-sm"
+          <Link href="/join" className="inline-block px-8 py-3 rounded-xl font-semibold text-sm"
             style={{ backgroundColor: '#c4a882', color: '#2d1a0e' }}>
             Apply as a Baker
           </Link>
@@ -156,11 +182,11 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="px-8 py-12" style={{ backgroundColor: '#2d1a0e' }}>
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between gap-8 mb-8">
+      <footer className="px-16 py-12" style={{ backgroundColor: '#2d1a0e' }}>
+        <div className="flex flex-col md:flex-row justify-between gap-8 mb-8" style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div className="max-w-xs">
             <p className="text-xl font-bold text-white mb-2">🎂 Whiskly</p>
-            <p className="text-sm" style={{ color: '#c4a882' }}>The marketplace for custom baked goods. Book with confidence.</p>
+            <p className="text-sm" style={{ color: '#c4a882' }}>Book bakers with confidence. Clear pricing. Structured booking.</p>
           </div>
           <div className="flex gap-16 text-sm">
             <div>
@@ -186,10 +212,18 @@ export default function Home() {
             </div>
           </div>
         </div>
-        <p className="text-sm border-t pt-6 max-w-6xl mx-auto" style={{ color: '#c4a882', borderColor: '#4a2e1a' }}>
+        <p className="text-sm border-t pt-6" style={{ color: '#c4a882', borderColor: '#4a2e1a', maxWidth: '1280px', margin: '0 auto' }}>
           © 2026 Whiskly. All rights reserved.
         </p>
       </footer>
+
+      <style>{`
+        @keyframes float {
+          0% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+          100% { transform: translateY(0px); }
+        }
+      `}</style>
     </main>
   )
 }

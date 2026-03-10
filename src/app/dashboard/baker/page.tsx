@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -15,6 +15,15 @@ export default function BakerDashboard() {
   const [uploading, setUploading] = useState(false)
   const [uploadingPortfolio, setUploadingPortfolio] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  // Delivery/handoff modal state
+  const [deliveryModalOrder, setDeliveryModalOrder] = useState<any>(null)
+  const [deliveryPhoto, setDeliveryPhoto] = useState<File | null>(null)
+  const [deliveryPhotoPreview, setDeliveryPhotoPreview] = useState<string | null>(null)
+  const [careInstructions, setCareInstructions] = useState('')
+  const [submittingDelivery, setSubmittingDelivery] = useState(false)
+  const deliveryPhotoRef = useRef<HTMLInputElement>(null)
 
   const [businessName, setBusinessName] = useState('')
   const [bio, setBio] = useState('')
@@ -33,12 +42,49 @@ export default function BakerDashboard() {
     }
   }, [])
 
+  // Real-time: new orders + new messages → update badges live
+  useEffect(() => {
+    if (!baker) return
+
+    const orderChannel = supabase
+      .channel('baker-new-orders-' + baker.id)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'orders',
+        filter: 'baker_id=eq.' + baker.id,
+      }, (payload) => {
+        setOrders(prev => [payload.new as any, ...prev])
+      })
+      .subscribe()
+
+    const msgChannel = supabase
+      .channel('baker-new-messages-' + baker.user_id)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: 'receiver_id=eq.' + baker.user_id,
+      }, () => {
+        setActiveTab(current => {
+          if (current !== 'messages') setUnreadCount(c => c + 1)
+          return current
+        })
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(orderChannel)
+      supabase.removeChannel(msgChannel)
+    }
+  }, [baker])
+
   async function loadDashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
     const { data: bakerData } = await supabase
-      .from('bakers').select('*').eq('user_id', user.id).single()
+      .from('bakers').select('*').eq('user_id', user.id).maybeSingle()
 
     if (bakerData) {
       setBaker(bakerData)
@@ -51,14 +97,24 @@ export default function BakerDashboard() {
       setLeadTime(bakerData.lead_time_days?.toString() || '7')
 
       const { data: ordersData } = await supabase
-        .from('orders').select('*').eq('baker_id', bakerData.id)
+        .from('orders').select('*, inspiration_photo_urls').eq('baker_id', bakerData.id)
         .order('created_at', { ascending: false })
-      setOrders(ordersData || [])
+      setOrders((ordersData || []).map(o => ({
+        ...o,
+        inspiration_photo_urls: o.inspiration_photo_urls || []
+      })))
 
       const { data: portfolioData } = await supabase
         .from('portfolio_items').select('*').eq('baker_id', bakerData.id)
         .order('created_at', { ascending: false })
       setPortfolio(portfolioData || [])
+
+      const { data: unreadData } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('receiver_id', user.id)
+        .is('read_at', null)
+      setUnreadCount((unreadData || []).length)
     }
     setLoading(false)
   }
@@ -76,6 +132,7 @@ export default function BakerDashboard() {
       specialties: baker?.specialties || [],
       rush_orders_available: baker?.rush_orders_available || false,
       cancellation_policy: baker?.cancellation_policy || '',
+      pickup_address: baker?.pickup_address || null,
     }).eq('id', baker.id)
     setSaving(false)
     alert('Profile saved!')
@@ -121,6 +178,143 @@ export default function BakerDashboard() {
     setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o))
   }
 
+  // FIX: renamed proofUrl → proofPhotoUrl to match email route expectation
+  async function submitDelivery(order: any) {
+    if (!deliveryPhoto) return
+    setSubmittingDelivery(true)
+
+    const ext = deliveryPhoto.name.split('.').pop()
+    const fileName = order.id + '-delivery-' + Date.now() + '.' + ext
+    const { error } = await supabase.storage.from('delivery-proof').upload(fileName, deliveryPhoto, { upsert: true })
+    let proofPhotoUrl = ''
+    if (!error) {
+      const { data } = supabase.storage.from('delivery-proof').getPublicUrl(fileName)
+      proofPhotoUrl = data.publicUrl
+    }
+
+    await supabase.from('orders').update({
+      status: 'complete',
+      delivery_proof_url: proofPhotoUrl,
+      care_instructions: careInstructions,
+      delivery_confirmed_at: new Date().toISOString(),
+    }).eq('id', order.id)
+
+    // FIX: field name corrected to proofPhotoUrl (was proofUrl)
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'delivery_complete',
+        customerEmail: order.customer_email,
+        customerName: order.customer_name,
+        bakerName: baker.business_name,
+        eventType: order.event_type,
+        eventDate: order.event_date,
+        orderId: order.id,
+        proofPhotoUrl,          // ← fixed (was proofUrl)
+        careInstructions,
+        isPro: baker.tier === 'pro',
+      })
+    }).catch(() => {})
+
+    setOrders(orders.map(o => o.id === order.id ? {
+      ...o, status: 'complete', delivery_proof_url: proofPhotoUrl,
+      care_instructions: careInstructions, delivery_confirmed_at: new Date().toISOString()
+    } : o))
+
+    setDeliveryModalOrder(null)
+    setDeliveryPhoto(null)
+    setDeliveryPhotoPreview(null)
+    setCareInstructions('')
+    setSubmittingDelivery(false)
+  }
+
+  // FIX: now sends pickup_complete email to customer after handoff photo upload
+  async function submitHandoff(order: any) {
+    if (!deliveryPhoto) return
+    setSubmittingDelivery(true)
+
+    const ext = deliveryPhoto.name.split('.').pop()
+    const fileName = order.id + '-handoff-' + Date.now() + '.' + ext
+    const { error } = await supabase.storage.from('delivery-proof').upload(fileName, deliveryPhoto, { upsert: true })
+    let photoUrl = ''
+    if (!error) {
+      const { data } = supabase.storage.from('delivery-proof').getPublicUrl(fileName)
+      photoUrl = data.publicUrl
+    }
+
+    await supabase.from('orders').update({
+      handoff_photo_url: photoUrl,
+      care_instructions: careInstructions,
+    }).eq('id', order.id)
+
+    // FIX: was missing entirely — now notifies customer their order is ready for pickup
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'order_ready',
+        customerEmail: order.customer_email,
+        customerName: order.customer_name,
+        bakerName: baker.business_name,
+        eventType: order.event_type,
+        eventDate: order.event_date,
+        orderId: order.id,
+      })
+    }).catch(() => {})
+
+    setOrders(orders.map(o => o.id === order.id ? {
+      ...o, handoff_photo_url: photoUrl, care_instructions: careInstructions
+    } : o))
+
+    setDeliveryModalOrder(null)
+    setDeliveryPhoto(null)
+    setDeliveryPhotoPreview(null)
+    setCareInstructions('')
+    setSubmittingDelivery(false)
+  }
+
+  function getDaysUntil(dateStr: string) {
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const eventDate = new Date(year, month - 1, day)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return Math.round((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  }
+
+  async function sendReminder(order: any) {
+    const { data: customerData } = await supabase
+      .from('customers').select('user_id').eq('email', order.customer_email).maybeSingle()
+
+    const days = getDaysUntil(order.event_date)
+    const content = 'Just a friendly reminder — your ' + order.event_type + ' is coming up in ' + days + ' day' + (days !== 1 ? 's' : '') + '! Reach out if you have any questions or last-minute details. We can\'t wait to make it special for you.'
+
+    await supabase.from('messages').insert({
+      sender_id: baker.user_id,
+      receiver_id: customerData?.user_id || null,
+      baker_id: baker.id,
+      order_id: order.id,
+      content,
+    })
+
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'baker_question',
+        customerEmail: order.customer_email,
+        customerName: order.customer_name,
+        bakerName: businessName,
+        question: content,
+        eventType: order.event_type,
+        eventDate: order.event_date,
+        orderId: order.id,
+      })
+    }).catch(() => {})
+
+    alert('Reminder sent to ' + order.customer_name + '!')
+  }
+
   async function handleSignOut() {
     await supabase.auth.signOut()
     router.push('/')
@@ -145,85 +339,532 @@ export default function BakerDashboard() {
 
   const pending = orders.filter(o => o.status === 'pending')
   const confirmed = orders.filter(o => o.status === 'confirmed')
+  const inProgress = orders.filter(o => o.status === 'in_progress')
   const maxPhotos = baker?.tier === 'pro' ? 10 : 3
+
+  function OrderCard({ order, compact = false }: { order: any, compact?: boolean }) {
+    const [expanded, setExpanded] = useState(false)
+    const [localAsking, setLocalAsking] = useState(false)
+    const [localQuestion, setLocalQuestion] = useState('')
+    const [localSending, setLocalSending] = useState(false)
+
+    const statusConfig: Record<string, { label: string, bg: string, color: string }> = {
+      pending:     { label: 'Pending',     bg: '#fef9c3', color: '#854d0e' },
+      confirmed:   { label: 'Accepted',    bg: '#dcfce7', color: '#166534' },
+      in_progress: { label: 'In Progress', bg: '#dbeafe', color: '#1e40af' },
+      ready:       { label: 'Ready',       bg: '#f3e8ff', color: '#6b21a8' },
+      complete:    { label: 'Complete',    bg: '#f5f0eb', color: '#2d1a0e' },
+      declined:    { label: 'Declined',    bg: '#fee2e2', color: '#991b1b' },
+    }
+    const s = statusConfig[order.status] || statusConfig.pending
+    const isAccepted = ['confirmed','in_progress','ready','complete'].includes(order.status)
+
+    async function handleSendQuestion() {
+      if (!localQuestion.trim()) return
+      setLocalSending(true)
+
+      const { data: customerData } = await supabase
+        .from('customers').select('user_id').eq('email', order.customer_email).maybeSingle()
+
+      await supabase.from('orders').update({ baker_question: localQuestion.trim() }).eq('id', order.id)
+
+      await supabase.from('messages').insert({
+        sender_id: baker.user_id,
+        receiver_id: customerData?.user_id || null,
+        baker_id: baker.id,
+        order_id: order.id,
+        content: 'Question about your order: ' + localQuestion.trim(),
+      })
+
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'baker_question',
+          customerEmail: order.customer_email,
+          customerName: order.customer_name,
+          bakerName: businessName,
+          question: localQuestion.trim(),
+          eventType: order.event_type,
+          eventDate: order.event_date,
+          orderId: order.id,
+        })
+      }).catch(() => {})
+
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, baker_question: localQuestion.trim() } : o))
+      setLocalAsking(false)
+      setLocalQuestion('')
+      setLocalSending(false)
+    }
+
+    return (
+      <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#e0d5cc' }}>
+
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left"
+          style={{ backgroundColor: expanded ? '#faf8f6' : 'white' }}>
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-bold text-sm" style={{ color: '#2d1a0e' }}>{order.customer_name}</p>
+                <span className="px-2 py-0.5 text-xs rounded-full font-semibold flex-shrink-0"
+                  style={{ backgroundColor: s.bg, color: s.color }}>
+                  {s.label}
+                </span>
+                {order.baker_question && !expanded && (
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Question sent</span>
+                )}
+                {order.inspiration_photo_urls?.length > 0 && !expanded && (
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>
+                    {order.inspiration_photo_urls.length} photo{order.inspiration_photo_urls.length > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
+                {order.event_type} · {(() => { const [y,m,d] = (order.event_date).split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}) })()}
+                {order.budget ? ' · $' + order.budget : ''}
+                {order.fulfillment_type ? ' · ' + (order.fulfillment_type === 'delivery' ? 'Delivery' : 'Pickup') : ''}
+              </p>
+              {(() => {
+                const daysUntil = getDaysUntil(order.event_date)
+                const bakerLeadTime = baker?.lead_time_days || 7
+                const isRush = daysUntil >= 0 && daysUntil < bakerLeadTime
+                if (!isRush) return null
+                return (
+                  <p className="text-xs font-semibold mt-1 px-2 py-0.5 rounded-full inline-block"
+                    style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                    Rush order — {daysUntil === 0 ? 'event is today' : daysUntil === 1 ? 'event is tomorrow' : 'event in ' + daysUntil + ' days'}
+                  </p>
+                )
+              })()}
+            </div>
+          </div>
+          <span className="text-xs flex-shrink-0" style={{ color: '#5c3d2e' }}>{expanded ? '▲' : '▼'}</span>
+        </button>
+
+        <div className="px-5 pb-3 flex gap-2 flex-wrap" style={{ backgroundColor: expanded ? '#faf8f6' : 'white' }}>
+          {order.status === 'pending' && !localAsking && (
+            <>
+              <button onClick={() => updateOrderStatus(order.id, 'confirmed')}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white"
+                style={{ backgroundColor: '#2d1a0e' }}>
+                Accept
+              </button>
+              <button onClick={() => { setExpanded(true); setLocalAsking(true) }}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold border"
+                style={{ borderColor: '#5c3d2e', color: '#5c3d2e' }}>
+                Ask a Question
+              </button>
+              <button onClick={() => updateOrderStatus(order.id, 'declined')}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold border"
+                style={{ borderColor: '#991b1b', color: '#991b1b' }}>
+                Decline
+              </button>
+            </>
+          )}
+          {order.status === 'confirmed' && (
+            <button onClick={() => updateOrderStatus(order.id, 'in_progress')}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white"
+              style={{ backgroundColor: '#1e40af' }}>
+              Mark In Progress
+            </button>
+          )}
+          {order.status === 'in_progress' && (
+            <button onClick={() => updateOrderStatus(order.id, 'ready')}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white"
+              style={{ backgroundColor: '#6b21a8' }}>
+              Mark Ready
+            </button>
+          )}
+          {order.status === 'ready' && order.fulfillment_type === 'delivery' && (
+            <button onClick={() => setDeliveryModalOrder(order)}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white"
+              style={{ backgroundColor: '#166534' }}>
+              Mark Delivered
+            </button>
+          )}
+          {order.status === 'ready' && order.fulfillment_type === 'pickup' && !order.handoff_photo_url && (
+            <button onClick={() => setDeliveryModalOrder(order)}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white"
+              style={{ backgroundColor: '#1e40af' }}>
+              Confirm Handoff
+            </button>
+          )}
+          {order.status === 'ready' && order.fulfillment_type === 'pickup' && order.handoff_photo_url && (
+            <span className="px-4 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>
+              Handoff photo uploaded — awaiting customer confirmation
+            </span>
+          )}
+          {order.status === 'ready' && !order.fulfillment_type && (
+            <button onClick={() => updateOrderStatus(order.id, 'complete')}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white"
+              style={{ backgroundColor: '#166634' }}>
+              Mark Complete
+            </button>
+          )}
+        </div>
+
+        {expanded && (
+          <div className="px-5 pb-5 flex flex-col gap-3 border-t" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+
+            <div className="grid grid-cols-2 gap-3 pt-4">
+              {order.servings && (
+                <div>
+                  <p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Servings</p>
+                  <p className="text-sm" style={{ color: '#2d1a0e' }}>{order.servings}</p>
+                </div>
+              )}
+              {order.budget > 0 && (
+                <div>
+                  <p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Budget</p>
+                  <p className="text-sm" style={{ color: '#2d1a0e' }}>${order.budget}</p>
+                </div>
+              )}
+              {order.flavor_preferences && (
+                <div className="col-span-2">
+                  <p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Flavors</p>
+                  <p className="text-sm" style={{ color: '#2d1a0e' }}>{order.flavor_preferences}</p>
+                </div>
+              )}
+              {order.allergen_notes && (
+                <div className="col-span-2">
+                  <p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Allergens / Dietary</p>
+                  <p className="text-sm" style={{ color: '#2d1a0e' }}>{order.allergen_notes}</p>
+                </div>
+              )}
+            </div>
+
+            {order.fulfillment_type === 'delivery' && (
+              <div className="px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                <p className="text-xs font-semibold mb-0.5" style={{ color: '#2d1a0e' }}>Delivery Address</p>
+                {isAccepted && order.delivery_address ? (
+                  <a href={'https://maps.google.com/?q=' + encodeURIComponent(order.delivery_address + ', ' + (order.delivery_city || '') + ', ' + (order.delivery_state || '') + ' ' + (order.delivery_zip || ''))}
+                    target="_blank" rel="noopener noreferrer"
+                    className="text-sm font-medium underline" style={{ color: '#2d1a0e' }}>
+                    {order.delivery_address}{order.delivery_city ? ', ' + order.delivery_city : ''}{order.delivery_state ? ', ' + order.delivery_state : ''}{order.delivery_zip ? ' ' + order.delivery_zip : ''}
+                  </a>
+                ) : (
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>
+                    {order.delivery_city
+                      ? order.delivery_city + (order.delivery_state ? ', ' + order.delivery_state : '') + (order.delivery_zip ? ' ' + order.delivery_zip : '')
+                      : 'Address not provided'}
+                    {!isAccepted && <span className="ml-1 italic"> · Full address unlocks when you accept</span>}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {order.fulfillment_type === 'pickup' && (
+              <div className="px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                <p className="text-xs font-semibold mb-0.5" style={{ color: '#2d1a0e' }}>Pickup</p>
+                <p className="text-xs" style={{ color: '#5c3d2e' }}>Customer will pick up from your location</p>
+              </div>
+            )}
+
+            {order.item_description && (
+              <div>
+                <p className="text-xs font-semibold mb-1" style={{ color: '#5c3d2e' }}>Description</p>
+                <p className="text-sm leading-relaxed" style={{ color: '#2d1a0e' }}>{order.item_description}</p>
+              </div>
+            )}
+
+            {order.inspiration_photo_urls?.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#2d1a0e' }}>Inspiration Photos</p>
+                <div className="flex gap-2 flex-wrap">
+                  {order.inspiration_photo_urls.map((url: string, i: number) => (
+                    <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                      <img src={url} alt={'Inspiration ' + (i + 1)}
+                        className="w-24 h-24 object-cover rounded-xl border hover:opacity-90 transition-opacity"
+                        style={{ borderColor: '#e0d5cc' }} />
+                    </a>
+                  ))}
+                </div>
+                <p className="text-xs mt-1.5 italic" style={{ color: '#5c3d2e' }}>For reference only — not exact replication</p>
+              </div>
+            )}
+
+            <div className="pt-1">
+              <p className="text-xs" style={{ color: '#5c3d2e' }}>{order.customer_email}</p>
+            </div>
+
+            {order.baker_question && (
+              <div className="px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>
+                Question sent: "{order.baker_question}"
+              </div>
+            )}
+
+            {localAsking && (
+              <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>Ask the customer a question:</p>
+                <textarea
+                  value={localQuestion}
+                  onChange={e => setLocalQuestion(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. Do you have a specific flavor in mind? What's your guest count?"
+                  autoFocus
+                  className="w-full px-3 py-2 rounded-lg border text-sm resize-none"
+                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+                <div className="flex gap-2">
+                  <button onClick={handleSendQuestion} disabled={localSending || !localQuestion.trim()}
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white"
+                    style={{ backgroundColor: '#2d1a0e', opacity: (!localQuestion.trim() || localSending) ? 0.5 : 1 }}>
+                    {localSending ? 'Sending...' : 'Send Question'}
+                  </button>
+                  <button onClick={() => { setLocalAsking(false); setLocalQuestion('') }}
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold border"
+                    style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
 
+      {deliveryModalOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>
+              {deliveryModalOrder.fulfillment_type === 'delivery' ? 'Confirm Delivery' : 'Confirm Handoff'}
+            </h3>
+            <p className="text-xs mb-5" style={{ color: '#5c3d2e' }}>
+              {deliveryModalOrder.fulfillment_type === 'delivery'
+                ? 'Upload a photo as proof of delivery. This protects both you and the customer.'
+                : 'Upload a photo of the order ready for pickup. The customer will confirm receipt.'}
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-xs font-semibold mb-2" style={{ color: '#2d1a0e' }}>
+                Proof Photo <span style={{ color: '#dc2626' }}>*</span>
+              </label>
+              {deliveryPhotoPreview ? (
+                <div className="relative">
+                  <img src={deliveryPhotoPreview} alt="Proof" className="w-full h-48 object-cover rounded-xl border" style={{ borderColor: '#e0d5cc' }} />
+                  <button onClick={() => { setDeliveryPhoto(null); setDeliveryPhotoPreview(null) }}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center"
+                    style={{ backgroundColor: '#991b1b' }}>✕</button>
+                </div>
+              ) : (
+                <label className="cursor-pointer flex flex-col items-center justify-center w-full h-36 rounded-xl border-2 border-dashed gap-2"
+                  style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
+                  <span className="text-2xl font-light" style={{ color: '#5c3d2e' }}>+</span>
+                  <span className="text-xs font-medium" style={{ color: '#5c3d2e' }}>Tap to upload photo</span>
+                  <input ref={deliveryPhotoRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        setDeliveryPhoto(file)
+                        const reader = new FileReader()
+                        reader.onload = ev => setDeliveryPhotoPreview(ev.target?.result as string)
+                        reader.readAsDataURL(file)
+                      }
+                    }} />
+                </label>
+              )}
+            </div>
+
+            {(baker?.tier === 'pro' || deliveryModalOrder.fulfillment_type === 'pickup') && (
+              <div className="mb-5">
+                <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>
+                  Care & Storage Instructions
+                  {baker?.tier !== 'pro' && deliveryModalOrder.fulfillment_type === 'delivery' && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Pro only on delivery card</span>
+                  )}
+                </label>
+                <textarea value={careInstructions} onChange={e => setCareInstructions(e.target.value)}
+                  rows={3} placeholder="e.g. Keep refrigerated. Best served at room temperature. Consume within 3 days."
+                  className="w-full px-3 py-2.5 rounded-xl border text-sm resize-none"
+                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={() => { setDeliveryModalOrder(null); setDeliveryPhoto(null); setDeliveryPhotoPreview(null); setCareInstructions('') }}
+                className="flex-1 py-3 rounded-xl border text-sm font-semibold"
+                style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+                Cancel
+              </button>
+              <button
+                onClick={() => deliveryModalOrder.fulfillment_type === 'delivery' ? submitDelivery(deliveryModalOrder) : submitHandoff(deliveryModalOrder)}
+                disabled={!deliveryPhoto || submittingDelivery}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: '#2d1a0e', opacity: (!deliveryPhoto || submittingDelivery) ? 0.5 : 1 }}>
+                {submittingDelivery ? 'Submitting...' : deliveryModalOrder.fulfillment_type === 'delivery' ? 'Confirm Delivery' : 'Confirm Handoff'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <nav className="flex items-center justify-between px-8 py-4 bg-white shadow-sm">
-        <Link href="/" className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>🎂 Whiskly</Link>
-        <p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>Baker Dashboard</p>
+        <Link href="/" className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>Whiskly</Link>
+        <p className="text-sm font-medium" style={{ color: '#5c3d2e' }}>Baker Dashboard</p>
         <div className="flex items-center gap-3">
-          <Link href={'/bakers/' + baker?.id} className="px-4 py-2 text-sm rounded-lg border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>View Profile</Link>
-          <button onClick={handleSignOut} className="px-4 py-2 text-sm rounded-lg text-white" style={{ backgroundColor: '#2d1a0e' }}>Sign Out</button>
+          <Link href={'/bakers/' + baker?.id}
+            className="px-4 py-2 text-sm rounded-lg border"
+            style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
+            View Profile
+          </Link>
+          <button onClick={handleSignOut}
+            className="px-4 py-2 text-sm rounded-lg text-white"
+            style={{ backgroundColor: '#2d1a0e' }}>
+            Sign Out
+          </button>
         </div>
       </nav>
 
-      <div className="px-8 py-8 max-w-6xl mx-auto">
+      <div className="px-4 md:px-8 py-8 max-w-6xl mx-auto">
 
         <div className="mb-8">
           <h1 className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{businessName || 'Your Bakery'}</h1>
           <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Manage your profile and customer requests</p>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
             <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{pending.length}</p>
-            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Pending Requests</p>
+            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Pending</p>
           </div>
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
             <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{confirmed.length}</p>
-            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Confirmed Orders</p>
+            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Accepted</p>
+          </div>
+          <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
+            <p className="text-3xl font-bold" style={{ color: '#1e40af' }}>{inProgress.length}</p>
+            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>In Progress</p>
           </div>
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
             <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{orders.length}</p>
-            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Total Orders</p>
+            <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Total</p>
           </div>
         </div>
 
-        <div className="flex gap-2 mb-6">
-          {['overview', 'orders', 'profile', 'gallery'].map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className="px-5 py-2 rounded-lg text-sm font-semibold capitalize"
-              style={{ backgroundColor: activeTab === tab ? '#2d1a0e' : 'white', color: activeTab === tab ? 'white' : '#2d1a0e' }}>
+        <div className="flex gap-2 mb-6 flex-wrap">
+          {['Overview', 'Orders', 'Messages', 'Profile', 'Gallery'].map((tab) => (
+            <button key={tab} onClick={() => { setActiveTab(tab.toLowerCase()); if (tab === 'Messages') setUnreadCount(0) }}
+              className="px-5 py-2 rounded-lg text-sm font-semibold relative"
+              style={{
+                backgroundColor: activeTab === tab.toLowerCase() ? '#2d1a0e' : 'white',
+                color: activeTab === tab.toLowerCase() ? 'white' : '#2d1a0e'
+              }}>
               {tab}
+              {tab === 'Orders' && pending.length > 0 && (
+                <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full font-bold"
+                  style={{ backgroundColor: activeTab === 'orders' ? 'rgba(255,255,255,0.25)' : '#2d1a0e', color: 'white' }}>
+                  {pending.length}
+                </span>
+              )}
+              {tab === 'Messages' && unreadCount > 0 && (
+                <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full font-bold"
+                  style={{ backgroundColor: '#dc2626', color: 'white' }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
 
-        {/* Overview Tab */}
         {activeTab === 'overview' && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Recent Requests</h2>
-            {pending.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-4xl mb-3">📬</p>
-                <p className="font-semibold" style={{ color: '#2d1a0e' }}>No pending requests yet</p>
-                <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Share your profile to start getting orders</p>
-                <div className="mt-4 px-4 py-2 bg-gray-50 rounded-lg text-sm inline-block" style={{ color: '#5c3d2e' }}>
-                  {typeof window !== 'undefined' ? window.location.origin + '/bakers/' + baker?.id : ''}
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {pending.slice(0, 5).map((order) => (
-                  <div key={order.id} className="flex items-center justify-between p-4 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
-                    <div>
-                      <p className="font-semibold text-sm" style={{ color: '#2d1a0e' }}>{order.customer_name}</p>
-                      <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>{order.event_type} · ${order.budget} · {order.event_date}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => updateOrderStatus(order.id, 'confirmed')} className="px-3 py-1 text-xs rounded-lg text-white" style={{ backgroundColor: '#2d1a0e' }}>Accept</button>
-                      <button onClick={() => updateOrderStatus(order.id, 'declined')} className="px-3 py-1 text-xs rounded-lg border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Decline</button>
-                    </div>
+          <div className="flex flex-col gap-6">
+            {(() => {
+              const upcoming = orders
+                .filter(o => (o.status === 'confirmed' || o.status === 'in_progress' || o.status === 'ready') && getDaysUntil(o.event_date) > 0)
+                .sort((a, b) => getDaysUntil(a.event_date) - getDaysUntil(b.event_date))
+                .slice(0, 5)
+              if (upcoming.length === 0) return null
+              return (
+                <div className="bg-white rounded-2xl p-6 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Upcoming Events</h2>
+                    {baker?.tier !== 'pro' && (
+                      <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>
+                        Reminders · Pro only
+                      </span>
+                    )}
                   </div>
-                ))}
+                  <div className="flex flex-col gap-3">
+                    {upcoming.map(order => {
+                      const days = getDaysUntil(order.event_date)
+                      const urgent = days <= 7
+                      return (
+                        <div key={order.id} className="flex items-center justify-between p-4 rounded-xl"
+                          style={{ backgroundColor: urgent ? '#fff7ed' : '#f5f0eb' }}>
+                          <div className="flex items-center gap-4">
+                            <div className="text-center w-12 flex-shrink-0">
+                              <p className="text-2xl font-bold leading-none" style={{ color: urgent ? '#c2410c' : '#2d1a0e' }}>{days}</p>
+                              <p className="text-xs mt-0.5" style={{ color: urgent ? '#c2410c' : '#5c3d2e' }}>days</p>
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{order.customer_name}</p>
+                              <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{order.event_type} · {(() => { const [y,m,d] = (order.event_date).split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}) })()}</p>
+                              {order.budget && <p className="text-xs" style={{ color: '#5c3d2e' }}>${order.budget}</p>}
+                            </div>
+                          </div>
+                          {baker?.tier === 'pro' ? (
+                            <button onClick={() => sendReminder(order)}
+                              className="px-4 py-2 rounded-lg text-xs font-semibold text-white flex-shrink-0"
+                              style={{ backgroundColor: urgent ? '#c2410c' : '#8B4513' }}>
+                              Send Reminder
+                            </button>
+                          ) : (
+                            <button onClick={() => alert('Upgrade to Pro to send reminders!')}
+                              className="px-4 py-2 rounded-lg text-xs font-semibold flex-shrink-0 border"
+                              style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+                              Remind
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
+
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>
+                Pending Requests
+                {pending.length > 0 && (
+                  <span className="ml-2 text-sm px-2 py-0.5 rounded-full font-semibold"
+                    style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>
+                    {pending.length} new
+                  </span>
+                )}
+              </h2>
+              {pending.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="font-semibold mb-1" style={{ color: '#2d1a0e' }}>No pending requests</p>
+                  <p className="text-sm mt-1 mb-4" style={{ color: '#5c3d2e' }}>Share your profile link to start getting orders</p>
+                  <div className="px-4 py-2 bg-gray-50 rounded-lg text-sm inline-block" style={{ color: '#5c3d2e' }}>
+                    {typeof window !== 'undefined' ? window.location.origin + '/bakers/' + baker?.id : ''}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {pending.slice(0, 5).map(order => <OrderCard key={order.id} order={order} />)}
+                </div>
+              )}
+            </div>
+
+            {inProgress.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm">
+                <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>In Progress</h2>
+                <div className="flex flex-col gap-3">
+                  {inProgress.map(order => <OrderCard key={order.id} order={order} />)}
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Orders Tab */}
         {activeTab === 'orders' && (
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>All Orders</h2>
@@ -231,42 +872,26 @@ export default function BakerDashboard() {
               <p className="text-center py-8" style={{ color: '#5c3d2e' }}>No orders yet</p>
             ) : (
               <div className="flex flex-col gap-3">
-                {orders.map((order) => (
-                  <div key={order.id} className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc' }}>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="font-semibold" style={{ color: '#2d1a0e' }}>{order.customer_name}</p>
-                      <span className="px-2 py-1 text-xs rounded-full" style={{
-                        backgroundColor: order.status === 'confirmed' ? '#dcfce7' : order.status === 'declined' ? '#fee2e2' : '#fef9c3',
-                        color: order.status === 'confirmed' ? '#166534' : order.status === 'declined' ? '#991b1b' : '#854d0e'
-                      }}>{order.status}</span>
-                    </div>
-                    <p className="text-sm" style={{ color: '#5c3d2e' }}>{order.event_type} · ${order.budget} · {order.event_date}</p>
-                    {order.item_description && <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>{order.item_description}</p>}
-                    {order.status === 'pending' && (
-                      <div className="flex gap-2 mt-3">
-                        <button onClick={() => updateOrderStatus(order.id, 'confirmed')} className="px-3 py-1 text-xs rounded-lg text-white" style={{ backgroundColor: '#2d1a0e' }}>Accept</button>
-                        <button onClick={() => updateOrderStatus(order.id, 'declined')} className="px-3 py-1 text-xs rounded-lg border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Decline</button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {orders.map(order => <OrderCard key={order.id} order={order} />)}
               </div>
             )}
           </div>
         )}
 
-        {/* Profile Tab */}
+        {activeTab === 'messages' && (
+          <MessagesTab bakerId={baker?.id} bakerUserId={baker?.user_id} orders={orders} />
+        )}
+
         {activeTab === 'profile' && (
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <h2 className="text-lg font-bold mb-6" style={{ color: '#2d1a0e' }}>Edit Profile</h2>
             <div className="flex flex-col gap-5 max-w-lg">
 
-              {/* Tier Badge */}
               <div className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>
-                      {baker?.tier === 'pro' ? '⭐ Pro Baker' : '🆓 Free Tier'}
+                      {baker?.tier === 'pro' ? 'Pro Baker' : 'Free Tier'}
                     </p>
                     <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
                       {baker?.tier === 'pro'
@@ -284,12 +909,11 @@ export default function BakerDashboard() {
                 </div>
               </div>
 
-              {/* Stripe Connect */}
               <div className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>
-                      {baker?.stripe_account_id ? '✅ Stripe Connected' : '💳 Connect Stripe'}
+                      {baker?.stripe_account_id ? 'Stripe Connected' : 'Connect Stripe'}
                     </p>
                     <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
                       {baker?.stripe_account_id
@@ -301,64 +925,77 @@ export default function BakerDashboard() {
                     <button onClick={connectStripe}
                       className="px-4 py-2 rounded-lg text-white text-xs font-semibold"
                       style={{ backgroundColor: '#635bff' }}>
-                      Connect →
+                      Connect
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* Profile Photo */}
               <div>
                 <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Profile Photo</label>
                 <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#f5f0eb' }}>
+                  <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: '#f5f0eb' }}>
                     {baker?.profile_photo_url
                       ? <img src={baker.profile_photo_url} alt="Profile" className="w-full h-full object-cover" />
-                      : <span className="text-2xl">🎂</span>}
+                      : <span className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>{businessName?.charAt(0) || 'B'}</span>}
                   </div>
                   <div>
-                    <label className="cursor-pointer px-4 py-2 rounded-lg text-sm font-semibold border inline-block" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
+                    <label className="cursor-pointer px-4 py-2 rounded-lg text-sm font-semibold border inline-block"
+                      style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
                       {uploading ? 'Uploading...' : 'Upload Photo'}
-                      <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadPhoto(e.target.files[0]) }} />
+                      <input type="file" accept="image/*" className="hidden"
+                        onChange={e => { if (e.target.files?.[0]) uploadPhoto(e.target.files[0]) }} />
                     </label>
-                    <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>JPG, PNG — shows on your public profile</p>
+                    <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>JPG or PNG — shown on your public profile</p>
                   </div>
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Business Name</label>
-                <input value={businessName} onChange={e => setBusinessName(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                <input value={businessName} onChange={e => setBusinessName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-lg border text-sm"
+                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
               </div>
 
               <div>
                 <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Bio</label>
-                <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3}
+                  className="w-full px-4 py-3 rounded-lg border text-sm"
+                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
               </div>
 
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>City</label>
-                  <input value={city} onChange={e => setCity(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                  <input value={city} onChange={e => setCity(e.target.value)}
+                    className="w-full px-4 py-3 rounded-lg border text-sm"
+                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                 </div>
                 <div className="w-20">
                   <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>State</label>
-                  <input value={state} onChange={e => setState(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                  <input value={state} onChange={e => setState(e.target.value)}
+                    className="w-full px-4 py-3 rounded-lg border text-sm"
+                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                 </div>
               </div>
 
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Starting Price ($)</label>
-                  <input value={startingPrice} onChange={e => setStartingPrice(e.target.value)} type="number" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                  <input value={startingPrice} onChange={e => setStartingPrice(e.target.value)} type="number"
+                    className="w-full px-4 py-3 rounded-lg border text-sm"
+                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                 </div>
                 <div className="flex-1">
                   <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Lead Time (days)</label>
-                  <input value={leadTime} onChange={e => setLeadTime(e.target.value)} type="number" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                  <input value={leadTime} onChange={e => setLeadTime(e.target.value)} type="number"
+                    className="w-full px-4 py-3 rounded-lg border text-sm"
+                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                 </div>
               </div>
 
-              {/* Specialties */}
               <div>
                 <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Specialties</label>
                 <div className="flex flex-wrap gap-2">
@@ -369,7 +1006,7 @@ export default function BakerDashboard() {
                         const updated = current.includes(s) ? current.filter((x: string) => x !== s) : [...current, s]
                         setBaker({ ...baker, specialties: updated })
                       }}
-                      className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
+                      className="px-3 py-1.5 rounded-full text-xs font-medium"
                       style={{
                         backgroundColor: baker?.specialties?.includes(s) ? '#2d1a0e' : '#f5f0eb',
                         color: baker?.specialties?.includes(s) ? 'white' : '#2d1a0e',
@@ -381,7 +1018,6 @@ export default function BakerDashboard() {
                 </div>
               </div>
 
-              {/* Rush Orders Toggle */}
               <div>
                 <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Rush Orders</label>
                 <button
@@ -402,9 +1038,8 @@ export default function BakerDashboard() {
                 </button>
               </div>
 
-              {/* Cancellation Policy */}
               <div>
-                <label className="block text-sm font-semibold mb-1.5" style={{ color: '#2d1a0e' }}>Cancellation Policy</label>
+                <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Cancellation Policy</label>
                 <textarea
                   value={baker?.cancellation_policy || ''}
                   onChange={e => setBaker({ ...baker, cancellation_policy: e.target.value })}
@@ -414,7 +1049,21 @@ export default function BakerDashboard() {
                   style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
               </div>
 
-              <button onClick={saveProfile} disabled={saving} className="py-3 rounded-lg text-white font-semibold"
+              {baker?.pickup_available && (
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Pickup Address</label>
+                  <p className="text-xs mb-2" style={{ color: '#5c3d2e' }}>Only shared with customers once you mark their order as Ready.</p>
+                  <input
+                    value={baker?.pickup_address || ''}
+                    onChange={e => setBaker({ ...baker, pickup_address: e.target.value })}
+                    placeholder="123 Baker St, Upper Marlboro, MD 20774"
+                    className="w-full px-4 py-3 rounded-lg border text-sm"
+                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                </div>
+              )}
+
+              <button onClick={saveProfile} disabled={saving}
+                className="py-3 rounded-lg text-white font-semibold"
                 style={{ backgroundColor: '#2d1a0e', opacity: saving ? 0.7 : 1 }}>
                 {saving ? 'Saving...' : 'Save Profile'}
               </button>
@@ -422,36 +1071,39 @@ export default function BakerDashboard() {
           </div>
         )}
 
-        {/* Gallery Tab */}
         {activeTab === 'gallery' && (
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Portfolio Gallery</h2>
                 <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>
-                  {portfolio.length}/{maxPhotos} photos · {baker?.tier !== 'pro' && 'Upgrade to Pro for 10 photos · '}Customers see this on your profile
+                  {portfolio.length}/{maxPhotos} photos
+                  {baker?.tier !== 'pro' && ' · Upgrade to Pro for 10 photos'}
                 </p>
               </div>
               {portfolio.length < maxPhotos && (
-                <label className="cursor-pointer px-4 py-2 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>
-                  {uploadingPortfolio ? 'Uploading...' : '+ Add Photo'}
-                  <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />
+                <label className="cursor-pointer px-4 py-2 rounded-lg text-white text-sm font-semibold"
+                  style={{ backgroundColor: '#2d1a0e' }}>
+                  {uploadingPortfolio ? 'Uploading...' : 'Add Photo'}
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />
                 </label>
               )}
             </div>
 
             {portfolio.length === 0 ? (
               <div className="text-center py-16 border-2 border-dashed rounded-2xl" style={{ borderColor: '#e0d5cc' }}>
-                <p className="text-4xl mb-3">📸</p>
                 <p className="font-semibold mb-1" style={{ color: '#2d1a0e' }}>No photos yet</p>
                 <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Upload your best work to attract customers</p>
-                <label className="cursor-pointer px-6 py-3 rounded-xl text-white text-sm font-semibold inline-block" style={{ backgroundColor: '#2d1a0e' }}>
+                <label className="cursor-pointer px-6 py-3 rounded-xl text-white text-sm font-semibold inline-block"
+                  style={{ backgroundColor: '#2d1a0e' }}>
                   {uploadingPortfolio ? 'Uploading...' : 'Upload Your First Photo'}
-                  <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />
                 </label>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {portfolio.map((item) => (
                   <div key={item.id} className="relative group rounded-xl overflow-hidden" style={{ aspectRatio: '1' }}>
                     <img src={item.image_url} alt="Portfolio" className="w-full h-full object-cover" />
@@ -459,16 +1111,19 @@ export default function BakerDashboard() {
                       style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
                       <button onClick={() => deletePortfolioPhoto(item.id)}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
-                        style={{ backgroundColor: '#991b1b' }}>Delete</button>
+                        style={{ backgroundColor: '#991b1b' }}>
+                        Delete
+                      </button>
                     </div>
                   </div>
                 ))}
                 {portfolio.length < maxPhotos && (
                   <label className="cursor-pointer rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2"
                     style={{ borderColor: '#e0d5cc', aspectRatio: '1' }}>
-                    <span className="text-2xl" style={{ color: '#5c3d2e' }}>+</span>
+                    <span className="text-2xl font-light" style={{ color: '#5c3d2e' }}>+</span>
                     <span className="text-xs font-medium" style={{ color: '#5c3d2e' }}>Add photo</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => { if (e.target.files?.[0]) uploadPortfolioPhoto(e.target.files[0]) }} />
                   </label>
                 )}
               </div>
@@ -478,5 +1133,262 @@ export default function BakerDashboard() {
 
       </div>
     </main>
+  )
+}
+
+function MessagesTab({ bakerId, bakerUserId, orders }: { bakerId: string, bakerUserId: string, orders: any[] }) {
+  const [conversations, setConversations] = useState<any[]>([])
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null)
+  const [activeOrder, setActiveOrder] = useState<any>(null)
+  const [messages, setMessages] = useState<any[]>([])
+  const [newMessage, setNewMessage] = useState('')
+  const [sending, setSending] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (bakerId) loadConversations()
+  }, [bakerId])
+
+  useEffect(() => {
+    if (!activeOrderId) return
+    loadThread(activeOrderId)
+
+    const channel = supabase
+      .channel('baker-thread-' + activeOrderId)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: 'order_id=eq.' + activeOrderId,
+      }, (payload) => {
+        setMessages(prev => {
+          if (prev.find(m => m.id === (payload.new as any).id)) return prev
+          return [...prev, payload.new]
+        })
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [activeOrderId])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  async function loadConversations() {
+    const { data } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('baker_id', bakerId)
+      .order('created_at', { ascending: false })
+
+    if (!data) return
+
+    const seen = new Set<string>()
+    const threads: any[] = []
+    for (const msg of data) {
+      const key = msg.order_id || 'general-' + (msg.sender_id === bakerUserId ? msg.receiver_id : msg.sender_id)
+      if (!seen.has(key)) {
+        seen.add(key)
+        threads.push({ ...msg, thread_key: key })
+      }
+    }
+
+    const enriched = await Promise.all(threads.map(async (t) => {
+      const order = orders.find(o => o.id === t.order_id)
+      const customerId = t.sender_id === bakerUserId ? t.receiver_id : t.sender_id
+      const { data: customerData } = await supabase
+        .from('customers').select('full_name').eq('user_id', customerId).maybeSingle()
+      return {
+        ...t,
+        order_info: order || null,
+        customer_name: customerData?.full_name || order?.customer_name || 'Customer',
+        unread: !t.read_at && t.receiver_id === bakerUserId ? 1 : 0,
+      }
+    }))
+
+    setConversations(enriched)
+    if (!activeOrderId && enriched.length > 0) {
+      setActiveOrderId(enriched[0].order_id)
+      setActiveOrder(enriched[0].order_info)
+    }
+  }
+
+  async function loadThread(orderId: string) {
+    const { data } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('order_id', orderId)
+      .order('created_at', { ascending: true })
+    setMessages(data || [])
+
+    const order = orders.find(o => o.id === orderId)
+    setActiveOrder(order || null)
+
+    await supabase.from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('order_id', orderId)
+      .eq('receiver_id', bakerUserId)
+      .is('read_at', null)
+  }
+
+  async function sendMessage() {
+    if (!newMessage.trim() || !activeOrderId || !activeOrder) return
+    setSending(true)
+
+    const { data: customerData } = await supabase
+      .from('customers').select('user_id').eq('email', activeOrder.customer_email).maybeSingle()
+
+    await supabase.from('messages').insert({
+      sender_id: bakerUserId,
+      receiver_id: customerData?.user_id || null,
+      baker_id: bakerId,
+      order_id: activeOrderId,
+      content: newMessage.trim(),
+    })
+
+    setNewMessage('')
+    setSending(false)
+    loadConversations()
+  }
+
+  function formatDate(ts: string) {
+    const d = new Date(ts)
+    const today = new Date()
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1)
+    if (d.toDateString() === today.toDateString()) return 'Today'
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+
+  function formatTime(ts: string) {
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ height: '600px', display: 'flex' }}>
+
+      <div className={`${activeOrderId ? 'hidden md:flex' : 'flex'} border-r overflow-y-auto flex-shrink-0 flex-col w-full md:w-72`} style={{ borderColor: '#e0d5cc' }}>
+        <div className="p-4 border-b" style={{ borderColor: '#e0d5cc' }}>
+          <h3 className="font-bold text-sm" style={{ color: '#2d1a0e' }}>Conversations</h3>
+        </div>
+        {conversations.length === 0 ? (
+          <div className="p-6 text-center flex-1 flex flex-col items-center justify-center">
+            <p className="text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>No messages yet</p>
+            <p className="text-xs" style={{ color: '#5c3d2e' }}>Messages from customers will appear here</p>
+          </div>
+        ) : (
+          conversations.map(convo => (
+            <button key={convo.thread_key}
+              onClick={() => { setActiveOrderId(convo.order_id); setActiveOrder(convo.order_info) }}
+              className="w-full p-4 text-left border-b"
+              style={{
+                borderColor: '#e0d5cc',
+                backgroundColor: activeOrderId === convo.order_id ? '#f5f0eb' : 'white',
+                borderLeft: activeOrderId === convo.order_id ? '3px solid #2d1a0e' : '3px solid transparent',
+              }}>
+              <div className="flex items-center justify-between mb-0.5">
+                <p className="text-sm font-semibold truncate" style={{ color: '#2d1a0e' }}>{convo.customer_name}</p>
+                {convo.unread > 0 && (
+                  <span className="text-xs text-white rounded-full w-5 h-5 flex items-center justify-center font-semibold flex-shrink-0 ml-1"
+                    style={{ backgroundColor: '#2d1a0e' }}>
+                    {convo.unread}
+                  </span>
+                )}
+              </div>
+              {convo.order_info && (
+                <p className="text-xs font-medium mb-0.5" style={{ color: '#8B4513' }}>
+                  {convo.order_info.event_type} · {(() => { const [y,m,d] = (convo.order_info.event_date).split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}) })()}
+                </p>
+              )}
+              <p className="text-xs truncate" style={{ color: '#5c3d2e' }}>{convo.content}</p>
+            </button>
+          ))
+        )}
+      </div>
+
+      <div className={`${activeOrderId ? 'flex' : 'hidden md:flex'} flex-col flex-1 min-w-0`}>
+        {!activeOrderId ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <p className="font-semibold mb-1" style={{ color: '#2d1a0e' }}>Select a conversation</p>
+              <p className="text-sm" style={{ color: '#5c3d2e' }}>Choose a customer from the left</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="p-4 border-b flex items-center gap-3" style={{ borderColor: '#e0d5cc' }}>
+              <button className="md:hidden text-sm font-semibold flex-shrink-0"
+                onClick={() => { setActiveOrderId(null); setActiveOrder(null) }}
+                style={{ color: '#2d1a0e' }}>← Back</button>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm truncate" style={{ color: '#2d1a0e' }}>
+                  {activeOrder?.customer_name || 'Customer'}
+                </p>
+                {activeOrder && (
+                  <p className="text-xs mt-0.5" style={{ color: '#8B4513' }}>
+                    {activeOrder.event_type} · {(() => { const [y,m,d] = (activeOrder.event_date).split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}) })()}
+                    {activeOrder.budget ? ' · $' + activeOrder.budget : ''}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+              {messages.length === 0 && (
+                <p className="text-center text-sm py-8" style={{ color: '#5c3d2e' }}>No messages yet</p>
+              )}
+              {messages.map((msg, i) => {
+                const isMe = msg.sender_id === bakerUserId
+                const showDate = i === 0 || formatDate(messages[i - 1].created_at) !== formatDate(msg.created_at)
+                return (
+                  <div key={msg.id}>
+                    {showDate && (
+                      <div className="text-center my-2">
+                        <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>
+                          {formatDate(msg.created_at)}
+                        </span>
+                      </div>
+                    )}
+                    <div className={'flex ' + (isMe ? 'justify-end' : 'justify-start')}>
+                      <div style={{ maxWidth: '70%' }}>
+                        <div className="px-4 py-2.5 rounded-2xl text-sm" style={{
+                          backgroundColor: isMe ? '#2d1a0e' : '#f5f0eb',
+                          color: isMe ? 'white' : '#2d1a0e',
+                          borderBottomRightRadius: isMe ? '4px' : '16px',
+                          borderBottomLeftRadius: isMe ? '16px' : '4px',
+                        }}>
+                          {msg.content}
+                        </div>
+                        <p className={'text-xs mt-1 ' + (isMe ? 'text-right' : 'text-left')} style={{ color: '#5c3d2e' }}>
+                          {formatTime(msg.created_at)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+
+            <div className="p-4 border-t flex gap-3" style={{ borderColor: '#e0d5cc' }}>
+              <input
+                value={newMessage}
+                onChange={e => setNewMessage(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                placeholder="Type a message..."
+                className="flex-1 px-4 py-2 rounded-xl border text-sm"
+                style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6', color: '#2d1a0e' }} />
+              <button onClick={sendMessage} disabled={sending || !newMessage.trim()}
+                className="px-5 py-2 rounded-xl text-white text-sm font-semibold"
+                style={{ backgroundColor: '#2d1a0e', opacity: (sending || !newMessage.trim()) ? 0.7 : 1 }}>
+                Send
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }

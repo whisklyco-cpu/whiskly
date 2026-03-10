@@ -1,53 +1,242 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
+
+// ── Star display component ──────────────────────────────────────────────────
+function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
+  const full = Math.floor(rating)
+  const half = rating - full >= 0.5
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map(i => (
+        <svg key={i} width={size} height={size} viewBox="0 0 14 14" fill="none">
+          <path
+            d="M7 1.5l1.4 3 3.2.5-2.3 2.3.5 3.2L7 9 4.2 10.5l.5-3.2L2.4 5l3.2-.5z"
+            fill={i <= full ? '#c8975a' : i === full + 1 && half ? '#c8975a' : '#e0d5cc'}
+            fillOpacity={i === full + 1 && half ? 0.5 : 1}
+            stroke="#c8975a"
+            strokeWidth="0.5"
+          />
+        </svg>
+      ))}
+    </div>
+  )
+}
 
 export default function BakerProfile() {
   const { id } = useParams()
+  const router = useRouter()
   const [baker, setBaker] = useState<any>(null)
   const [portfolio, setPortfolio] = useState<any[]>([])
+  const [reviews, setReviews] = useState<any[]>([])   // ← new
   const [loading, setLoading] = useState(true)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [attempted, setAttempted] = useState(false)
+  const [inspirationFiles, setInspirationFiles] = useState<File[]>([])
+  const [inspirationPreviews, setInspirationPreviews] = useState<string[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const addressInputRef = useRef<HTMLInputElement>(null)
+  const autocompleteRef = useRef<any>(null)
 
   const [form, setForm] = useState({
-    customer_name: '', email: '', event_type: '', event_date: '', budget: '', item_description: ''
+    customer_name: '',
+    email: '',
+    event_type: '',
+    event_date: '',
+    servings: '',
+    budget: '',
+    flavor_preferences: '',
+    allergen_notes: '',
+    fulfillment_type: '',
+    delivery_address: '',
+    delivery_city: '',
+    delivery_state: '',
+    delivery_zip: '',
+    item_description: '',
   })
+
+  const [addressSuggestions, setAddressSuggestions] = useState<any[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const mapsLoadedRef = useRef(false)
+
+  const loadGoogleMaps = useCallback(() => {
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY
+    if (!key || mapsLoadedRef.current) return
+    if ((window as any).google?.maps) { mapsLoadedRef.current = true; return }
+    const script = document.createElement('script')
+    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + key + '&libraries=places&v=weekly'
+    script.async = true
+    script.onload = () => { mapsLoadedRef.current = true }
+    document.head.appendChild(script)
+  }, [])
+
+  useEffect(() => {
+    if (form.fulfillment_type === 'delivery') loadGoogleMaps()
+  }, [form.fulfillment_type, loadGoogleMaps])
+
+  async function handleAddressInput(value: string) {
+    setForm(f => ({ ...f, delivery_address: value }))
+    if (!value || value.length < 3) {
+      setAddressSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+    try {
+      const { AutocompleteSuggestion } = await (window as any).google.maps.importLibrary('places')
+      const request = { input: value, includedRegionCodes: ['us'] }
+      const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions(request)
+      setAddressSuggestions(suggestions.slice(0, 5))
+      setShowSuggestions(suggestions.length > 0)
+    } catch (err) {
+      console.error('Autocomplete error:', err)
+      setAddressSuggestions([])
+      setShowSuggestions(false)
+    }
+  }
+
+  async function selectAddressSuggestion(suggestion: any) {
+    setShowSuggestions(false)
+    const prediction = suggestion.placePrediction
+    setForm(f => ({ ...f, delivery_address: prediction.mainText?.toString() || prediction.text?.toString() || '' }))
+    try {
+      const place = prediction.toPlace()
+      await place.fetchFields({ fields: ['addressComponents'] })
+      const components = place.addressComponents || []
+      let streetNumber = '', street = '', city = '', state = '', zip = ''
+      for (const comp of components) {
+        const types = comp.types || []
+        if (types.includes('street_number')) streetNumber = comp.longText || ''
+        if (types.includes('route')) street = comp.longText || ''
+        if (types.includes('locality')) city = comp.longText || ''
+        if (types.includes('administrative_area_level_1')) state = comp.shortText || ''
+        if (types.includes('postal_code')) zip = comp.longText || ''
+      }
+      setForm(f => ({
+        ...f,
+        delivery_address: (streetNumber + ' ' + street).trim(),
+        delivery_city: city,
+        delivery_state: state,
+        delivery_zip: zip,
+      }))
+    } catch (e) {
+      console.error('Place details error:', e)
+    }
+  }
 
   useEffect(() => { loadBaker() }, [id])
 
   async function loadBaker() {
     const { data: bakerData } = await supabase
       .from('bakers').select('*').eq('id', id).single()
-
     if (bakerData) {
       setBaker(bakerData)
       const { data: portfolioData } = await supabase
         .from('portfolio_items').select('*').eq('baker_id', id)
         .eq('is_visible', true).order('created_at', { ascending: false })
       setPortfolio(portfolioData || [])
+
+      // ── Load reviews ──────────────────────────────────────────────────────
+      const { data: reviewData } = await supabase
+        .from('reviews')
+        .select('*')
+        .eq('baker_id', id)
+        .order('created_at', { ascending: false })
+      setReviews(reviewData || [])
     }
     setLoading(false)
   }
 
+  function handleInspirationChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+    const remaining = 3 - inspirationFiles.length
+    const toAdd = files.slice(0, remaining)
+    setInspirationFiles(prev => [...prev, ...toAdd])
+    toAdd.forEach(file => {
+      const reader = new FileReader()
+      reader.onload = ev => setInspirationPreviews(prev => [...prev, ev.target?.result as string])
+      reader.readAsDataURL(file)
+    })
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function removeInspirationPhoto(index: number) {
+    setInspirationFiles(prev => prev.filter((_, i) => i !== index))
+    setInspirationPreviews(prev => prev.filter((_, i) => i !== index))
+  }
+
+  async function uploadInspirationPhotos(orderId: string): Promise<string[]> {
+    const urls: string[] = []
+    for (const file of inspirationFiles) {
+      const ext = file.name.split('.').pop()
+      const fileName = orderId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + ext
+      const { error } = await supabase.storage
+        .from('order-inspirations')
+        .upload(fileName, file, { upsert: true })
+      if (!error) {
+        const { data } = supabase.storage.from('order-inspirations').getPublicUrl(fileName)
+        urls.push(data.publicUrl)
+      }
+    }
+    return urls
+  }
+
   async function handleSubmit() {
-    if (!form.customer_name || !form.email || !form.event_type || !form.event_date) return
+    const missingFields: string[] = []
+    if (!form.customer_name) missingFields.push('Your Name')
+    if (!form.email) missingFields.push('Email')
+    if (!form.event_type) missingFields.push('Event Type')
+    if (!form.event_date) missingFields.push('Event Date')
+    if (!form.servings) missingFields.push('Servings')
+    if (!form.budget) missingFields.push('Budget')
+    if (!form.flavor_preferences) missingFields.push('Flavor Preferences')
+    if (showFulfillment && !form.fulfillment_type) missingFields.push('Delivery or Pickup')
+    if (form.fulfillment_type === 'delivery') {
+      if (!form.delivery_address) missingFields.push('Street Address')
+      if (!form.delivery_city) missingFields.push('City')
+      if (!form.delivery_state) missingFields.push('State')
+      if (!form.delivery_zip) missingFields.push('Zip Code')
+    }
+    if (missingFields.length > 0) {
+      setAttempted(true)
+      setFormError('Please fill in: ' + missingFields.join(', '))
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    setFormError('')
+    setAttempted(false)
     setSubmitting(true)
 
-    await supabase.from('orders').insert({
+    const { data: newOrder } = await supabase.from('orders').insert({
       baker_id: baker.id,
       customer_name: form.customer_name,
       customer_email: form.email,
       event_type: form.event_type,
       event_date: form.event_date,
+      servings: form.servings,
       budget: parseFloat(form.budget) || 0,
+      flavor_preferences: form.flavor_preferences,
+      allergen_notes: form.allergen_notes,
+      fulfillment_type: form.fulfillment_type,
+      delivery_address: form.fulfillment_type === 'delivery'
+        ? (form.delivery_address + ', ' + form.delivery_city + ', ' + form.delivery_state + ' ' + form.delivery_zip).trim()
+        : null,
       item_description: form.item_description,
-      status: 'pending'
-    })
+      status: 'pending',
+      inspiration_photo_urls: [],
+    }).select().single()
+
+    if (newOrder && inspirationFiles.length > 0) {
+      const photoUrls = await uploadInspirationPhotos(newOrder.id)
+      if (photoUrls.length > 0) {
+        await supabase.from('orders').update({ inspiration_photo_urls: photoUrls }).eq('id', newOrder.id)
+      }
+    }
 
     await fetch('/api/email', {
       method: 'POST',
@@ -62,10 +251,16 @@ export default function BakerProfile() {
         budget: form.budget,
         description: form.item_description,
       })
-    })
+    }).catch(() => {})
 
-    setSubmitted(true)
     setSubmitting(false)
+    setSubmitted(true)
+
+    if (newOrder) {
+      setTimeout(() => {
+        router.push('/dashboard/customer?tab=orders&success=1')
+      }, 1800)
+    }
   }
 
   if (loading) return (
@@ -80,16 +275,19 @@ export default function BakerProfile() {
     </div>
   )
 
+  const showFulfillment = baker.delivery_available && baker.pickup_available
+  const avgRating = baker.avg_rating
+  const reviewCount = baker.review_count || reviews.length
+
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
-
       <Navbar />
 
-      <div className="max-w-5xl mx-auto px-6 py-10">
-        <div className="grid grid-cols-3 gap-8">
+      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
 
           {/* Left Column */}
-          <div className="col-span-2 flex flex-col gap-6">
+          <div className="md:col-span-2 flex flex-col gap-6">
 
             {/* Header Card */}
             <div className="bg-white rounded-2xl p-8 shadow-sm">
@@ -97,7 +295,7 @@ export default function BakerProfile() {
                 <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
                   {baker.profile_photo_url
                     ? <img src={baker.profile_photo_url} alt={baker.business_name} className="w-full h-full object-cover" />
-                    : <span className="text-3xl">🎂</span>}
+                    : <span className="text-2xl font-bold" style={{ color: '#5c3d2e' }}>{baker.business_name?.[0] || 'B'}</span>}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -109,7 +307,21 @@ export default function BakerProfile() {
                       <span className="px-2 py-0.5 text-xs font-semibold rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>🏠 Cottage Baker</span>
                     )}
                   </div>
-                  <p className="text-sm mb-3" style={{ color: '#5c3d2e' }}>📍 {baker.city}, {baker.state}</p>
+                  <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>📍 {baker.city}, {baker.state}</p>
+
+                  {/* ── Rating summary in header ── */}
+                  {avgRating && reviewCount > 0 ? (
+                    <div className="flex items-center gap-2 mb-3">
+                      <Stars rating={avgRating} size={15} />
+                      <span className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{avgRating.toFixed(1)}</span>
+                      <span className="text-sm" style={{ color: '#5c3d2e' }}>
+                        ({reviewCount} review{reviewCount !== 1 ? 's' : ''})
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-xs mb-3" style={{ color: '#9c7b6b' }}>No reviews yet</p>
+                  )}
+
                   <div className="flex flex-wrap gap-2">
                     {baker.starting_price && (
                       <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>Starting from ${baker.starting_price}</span>
@@ -137,7 +349,7 @@ export default function BakerProfile() {
             {portfolio.length > 0 && (
               <div className="bg-white rounded-2xl p-8 shadow-sm">
                 <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Portfolio</h2>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {portfolio.map((item) => (
                     <div key={item.id} className="rounded-xl overflow-hidden" style={{ aspectRatio: '1' }}>
                       <img src={item.image_url} alt="Portfolio" className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" />
@@ -174,7 +386,7 @@ export default function BakerProfile() {
             {/* Service Details */}
             <div className="bg-white rounded-2xl p-8 shadow-sm">
               <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Service Details</h2>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                 {baker.delivery_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>🚗</span> Delivery available</div>}
                 {baker.pickup_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>📦</span> Pickup available</div>}
                 {baker.rush_orders_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>⚡</span> Rush orders accepted</div>}
@@ -191,39 +403,96 @@ export default function BakerProfile() {
                 )}
               </div>
             </div>
+
+            {/* ── Reviews section ──────────────────────────────────────────── */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Reviews</h2>
+                {avgRating && reviewCount > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Stars rating={avgRating} size={14} />
+                    <span className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{avgRating.toFixed(1)}</span>
+                    <span className="text-sm" style={{ color: '#5c3d2e' }}>· {reviewCount} review{reviewCount !== 1 ? 's' : ''}</span>
+                  </div>
+                )}
+              </div>
+
+              {reviews.length === 0 ? (
+                <div className="text-center py-8 rounded-xl" style={{ backgroundColor: '#faf8f6' }}>
+                  <p className="text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>No reviews yet</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>Reviews appear after completed orders</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-5">
+                  {reviews.map((review) => (
+                    <div key={review.id} className="pb-5 border-b last:border-b-0 last:pb-0" style={{ borderColor: '#f5f0eb' }}>
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>
+                            {review.customer_name || 'Verified Customer'}
+                          </p>
+                          <p className="text-xs mt-0.5" style={{ color: '#9c7b6b' }}>
+                            {new Date(review.created_at).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}
+                            {review.event_type && <span> · {review.event_type}</span>}
+                          </p>
+                        </div>
+                        <Stars rating={review.rating} size={13} />
+                      </div>
+                      {review.comment && (
+                        <p className="text-sm leading-relaxed" style={{ color: '#5c3d2e' }}>{review.comment}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* ── End reviews ─────────────────────────────────────────────── */}
+
           </div>
 
-          {/* Right Column - Booking Form */}
-          <div className="col-span-1">
-            <div className="bg-white rounded-2xl p-6 shadow-sm sticky top-6">
+          {/* Right Column - Order Form */}
+          <div>
+            <div className="bg-white rounded-2xl p-6 shadow-sm md:sticky md:top-6">
               {submitted ? (
                 <div className="text-center py-8">
                   <p className="text-4xl mb-3">🎉</p>
-                  <h3 className="font-bold text-lg mb-2" style={{ color: '#2d1a0e' }}>Request Sent!</h3>
-                  <p className="text-sm" style={{ color: '#5c3d2e' }}>{baker.business_name} will be in touch soon.</p>
+                  <h3 className="font-bold text-lg mb-2" style={{ color: '#2d1a0e' }}>Order Sent!</h3>
+                  <p className="text-sm mb-1" style={{ color: '#5c3d2e' }}>{baker.business_name} will be in touch soon.</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>Taking you to your messages...</p>
                 </div>
               ) : (
                 <>
-                  <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Send a Request</h3>
-                  <p className="text-xs mb-5" style={{ color: '#5c3d2e' }}>No payment yet — just start the conversation</p>
+                  <h3 className="font-bold text-lg mb-0.5" style={{ color: '#2d1a0e' }}>Start Your Order</h3>
+                  <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>Describe your vision — no payment until your baker confirms</p>
+                  <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>Fields marked <span style={{ color: '#dc2626' }}>*</span> are required</p>
+
+                  {formError && (
+                    <div className="mb-3 px-4 py-3 rounded-xl text-xs font-medium" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>
+                      {formError}
+                    </div>
+                  )}
+
                   <div className="flex flex-col gap-3">
+
                     <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Your Name *</label>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Your Name <span style={{ color: '#dc2626' }}>*</span></label>
                       <input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })}
                         placeholder="Jane Smith" className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                        style={{ borderColor: !form.customer_name && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
+
                     <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Email *</label>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Email <span style={{ color: '#dc2626' }}>*</span></label>
                       <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
                         placeholder="you@example.com" className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                        style={{ borderColor: !form.email && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
+
                     <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Event Type *</label>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Event Type <span style={{ color: '#dc2626' }}>*</span></label>
                       <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value })}
                         className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
+                        style={{ borderColor: !form.event_type && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
                         <option value="">Select event</option>
                         <option>Birthday</option>
                         <option>Wedding</option>
@@ -235,31 +504,173 @@ export default function BakerProfile() {
                         <option>Other</option>
                       </select>
                     </div>
+
                     <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Event Date *</label>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Event Date <span style={{ color: '#dc2626' }}>*</span></label>
                       <input type="date" value={form.event_date} onChange={e => setForm({ ...form, event_date: e.target.value })}
+                        className="w-full px-3 py-2.5 rounded-lg border text-sm"
+                        style={{ borderColor: !form.event_date && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Servings <span style={{ color: '#dc2626' }}>*</span></label>
+                        <input value={form.servings} onChange={e => setForm({ ...form, servings: e.target.value })}
+                          placeholder="e.g. 50" className="w-full px-3 py-2.5 rounded-lg border text-sm"
+                          style={{ borderColor: !form.servings && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Budget ($) <span style={{ color: '#dc2626' }}>*</span></label>
+                        <input type="number" value={form.budget} onChange={e => setForm({ ...form, budget: e.target.value })}
+                          placeholder="150" className="w-full px-3 py-2.5 rounded-lg border text-sm"
+                          style={{ borderColor: !form.budget && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                      </div>
+                    </div>
+
+                    {showFulfillment && (
+                      <div>
+                        <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Delivery or Pickup? <span style={{ color: '#dc2626' }}>*</span></label>
+                        <select value={form.fulfillment_type} onChange={e => setForm({ ...form, fulfillment_type: e.target.value })}
+                          className="w-full px-3 py-2.5 rounded-lg border text-sm"
+                          style={{ borderColor: !form.fulfillment_type && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
+                          <option value="">Select preference</option>
+                          <option value="delivery">Delivery</option>
+                          <option value="pickup">Pickup</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {form.fulfillment_type === 'delivery' && (
+                      <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                        <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>Delivery Address <span style={{ color: '#dc2626' }}>*</span></p>
+                        <p className="text-xs" style={{ color: '#5c3d2e' }}>
+                          Only your city, state & zip are shown to the baker until they accept your order.
+                        </p>
+                        <div className="relative">
+                          <input
+                            ref={addressInputRef}
+                            value={form.delivery_address}
+                            onChange={e => handleAddressInput(e.target.value)}
+                            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                            placeholder="Start typing your address..."
+                            className="w-full px-3 py-2 rounded-lg border text-sm"
+                            style={{ borderColor: !form.delivery_address && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }}
+                            autoComplete="off" />
+                          {showSuggestions && addressSuggestions.length > 0 && (
+                            <div className="absolute left-0 right-0 bg-white rounded-xl border shadow-xl"
+                              style={{ borderColor: '#e0d5cc', top: '100%', marginTop: '4px', zIndex: 9999 }}>
+                              {addressSuggestions.map((s: any, i: number) => (
+                                <button key={i} type="button"
+                                  onMouseDown={() => selectAddressSuggestion(s)}
+                                  className="w-full px-3 py-2.5 text-left text-sm border-b last:border-b-0"
+                                  style={{ color: '#2d1a0e', borderColor: '#f5f0eb', backgroundColor: 'white' }}
+                                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f5f0eb')}
+                                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'white')}>
+                                  <span className="font-medium">{s.placePrediction?.mainText?.toString() || s.placePrediction?.text?.toString()}</span>
+                                  <span className="text-xs ml-1" style={{ color: '#5c3d2e' }}>{s.placePrediction?.secondaryText?.toString()}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {(form.delivery_city || form.delivery_state || form.delivery_zip) ? (
+                          <div className="flex gap-2 items-center px-3 py-2 rounded-lg" style={{ backgroundColor: '#dcfce7', border: '1px solid #bbf7d0' }}>
+                            <span className="text-xs" style={{ color: '#166534' }}>✓</span>
+                            <span className="text-sm font-medium flex-1" style={{ color: '#166534' }}>
+                              {form.delivery_city}{form.delivery_state ? ', ' + form.delivery_state : ''}{form.delivery_zip ? ' ' + form.delivery_zip : ''}
+                            </span>
+                            <button type="button" onClick={() => setForm(f => ({ ...f, delivery_address: '', delivery_city: '', delivery_state: '', delivery_zip: '' }))}
+                              className="text-xs underline" style={{ color: '#166534' }}>
+                              Change
+                            </button>
+                          </div>
+                        ) : (attempted && (!form.delivery_city || !form.delivery_zip)) ? (
+                          <p className="text-xs" style={{ color: '#dc2626' }}>Select an address from the dropdown to autofill city, state & zip</p>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {form.fulfillment_type === 'pickup' && (
+                      <div className="px-3 py-2.5 rounded-xl text-xs" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>
+                        📦 Pickup location ({baker.city}, {baker.state}) will be shared once your baker accepts your order.
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Flavor Preferences <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input value={form.flavor_preferences} onChange={e => setForm({ ...form, flavor_preferences: e.target.value })}
+                        placeholder="e.g. Chocolate, vanilla bean, lemon..."
+                        className="w-full px-3 py-2.5 rounded-lg border text-sm"
+                        style={{ borderColor: !form.flavor_preferences && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Allergen / Dietary Notes</label>
+                      <input value={form.allergen_notes} onChange={e => setForm({ ...form, allergen_notes: e.target.value })}
+                        placeholder="e.g. Nut-free, gluten-free, vegan..."
                         className="w-full px-3 py-2.5 rounded-lg border text-sm"
                         style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
+
                     <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Budget ($)</label>
-                      <input type="number" value={form.budget} onChange={e => setForm({ ...form, budget: e.target.value })}
-                        placeholder="150" className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Tell them what you want</label>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Describe your vision</label>
                       <textarea value={form.item_description} onChange={e => setForm({ ...form, item_description: e.target.value })}
-                        rows={3} placeholder="3 tier chocolate cake with gold details, serves 50..."
+                        rows={3} placeholder="3 tier chocolate cake with gold details, floral accents..."
                         className="w-full px-3 py-2.5 rounded-lg border text-sm resize-none"
                         style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>
+                        Inspiration Photos
+                        <span className="font-normal ml-1" style={{ color: '#5c3d2e' }}>(up to 3)</span>
+                      </label>
+
+                      {inspirationPreviews.length > 0 && (
+                        <div className="flex gap-2 mb-2 flex-wrap">
+                          {inspirationPreviews.map((src, i) => (
+                            <div key={i} className="relative">
+                              <img src={src} alt={'Inspiration ' + (i + 1)}
+                                className="w-16 h-16 object-cover rounded-lg border"
+                                style={{ borderColor: '#e0d5cc' }} />
+                              <button
+                                onClick={() => removeInspirationPhoto(i)}
+                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full text-white flex items-center justify-center text-xs font-bold"
+                                style={{ backgroundColor: '#991b1b' }}>
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {inspirationFiles.length < 3 && (
+                        <label className="cursor-pointer flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium w-full"
+                          style={{ borderColor: '#e0d5cc', color: '#5c3d2e', backgroundColor: '#faf8f6' }}>
+                          <span>+ Add photo</span>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={handleInspirationChange} />
+                        </label>
+                      )}
+
+                      <p className="text-xs mt-1.5 leading-relaxed" style={{ color: '#5c3d2e' }}>
+                        Baker uses photos for inspiration only — not exact replicas.
+                      </p>
+                    </div>
+
                     <button onClick={handleSubmit} disabled={submitting}
-                      className="w-full py-3 rounded-xl text-white font-semibold text-sm"
+                      className="w-full py-3 rounded-xl text-white font-semibold text-sm mt-1"
                       style={{ backgroundColor: '#2d1a0e', opacity: submitting ? 0.7 : 1 }}>
-                      {submitting ? 'Sending...' : 'Request ' + baker.business_name}
+                      {submitting ? 'Sending...' : 'Start Your Order with ' + baker.business_name}
                     </button>
-                    <p className="text-xs text-center" style={{ color: '#5c3d2e' }}>No payment required to send a request</p>
+
+                    <p className="text-xs text-center" style={{ color: '#5c3d2e' }}>No payment until your baker confirms</p>
+                    <p className="text-xs text-center" style={{ color: '#8B4513' }}>* Required fields</p>
                   </div>
                 </>
               )}

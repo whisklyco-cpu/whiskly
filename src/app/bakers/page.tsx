@@ -8,6 +8,31 @@ import Navbar from '@/components/Navbar'
 const SPECIALTIES = ['Wedding Cakes', 'Birthday Cakes', 'Custom Cookies', 'Cupcakes', 'Kids Party Cakes', 'Vegan/Gluten Free', 'Alcohol Infused', 'Breads', 'Cheesecakes', 'Macarons', 'Custom Dessert Boxes']
 const DIETARY = ['Vegan', 'Gluten Free', 'Nut Free', 'Halal', 'Kosher', 'Dairy Free']
 
+function StarRating({ rating, count }: { rating: number | null; count: number }) {
+  if (!rating || count === 0) return null
+  const full = Math.floor(rating)
+  const half = rating - full >= 0.5
+  return (
+    <div className="flex items-center gap-1.5 mt-1">
+      <div className="flex items-center gap-0.5">
+        {[1, 2, 3, 4, 5].map(i => (
+          <svg key={i} width="11" height="11" viewBox="0 0 12 12" fill="none">
+            <path
+              d="M6 1l1.2 2.6 2.8.4-2 2 .5 2.8L6 7.5 3.5 8.8l.5-2.8-2-2 2.8-.4z"
+              fill={i <= full ? '#c8975a' : i === full + 1 && half ? '#c8975a' : '#e0d5cc'}
+              fillOpacity={i === full + 1 && half ? 0.5 : 1}
+              stroke="#c8975a"
+              strokeWidth="0.5"
+            />
+          </svg>
+        ))}
+      </div>
+      <span className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>{rating.toFixed(1)}</span>
+      <span className="text-xs" style={{ color: '#9c7b6b' }}>({count})</span>
+    </div>
+  )
+}
+
 export default function BrowseBakers() {
   const [bakers, setBakers] = useState<any[]>([])
   const [filtered, setFiltered] = useState<any[]>([])
@@ -40,7 +65,8 @@ export default function BrowseBakers() {
     results.sort((a, b) => {
       if (a.tier === 'pro' && b.tier !== 'pro') return -1
       if (b.tier === 'pro' && a.tier !== 'pro') return 1
-      return 0
+      // Secondary: highest rated first
+      return (b.avg_rating || 0) - (a.avg_rating || 0)
     })
     setFiltered(results)
   }, [bakers, search, selectedSpecialty, selectedDietary, maxPrice, deliveryOnly, rushOnly])
@@ -185,17 +211,19 @@ export default function BrowseBakers() {
                         )}
                       </div>
                       <div className="p-5">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <h3 className="font-bold text-base" style={{ color: '#2d1a0e' }}>{baker.business_name}</h3>
+                        <div className="flex items-start justify-between mb-1">
+                          <div className="flex-1 min-w-0 pr-2">
+                            <h3 className="font-bold text-base truncate" style={{ color: '#2d1a0e' }}>{baker.business_name}</h3>
                             <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>📍 {baker.city}, {baker.state}</p>
+                            {/* Star rating — only shows when baker has reviews */}
+                            <StarRating rating={baker.avg_rating ?? null} count={baker.review_count ?? 0} />
                           </div>
                           {baker.starting_price && (
                             <p className="text-sm font-semibold flex-shrink-0" style={{ color: '#2d1a0e' }}>From ${baker.starting_price}</p>
                           )}
                         </div>
                         {baker.bio && (
-                          <p className="text-xs leading-relaxed mb-3 line-clamp-2" style={{ color: '#5c3d2e' }}>{baker.bio}</p>
+                          <p className="text-xs leading-relaxed mb-3 mt-2 line-clamp-2" style={{ color: '#5c3d2e' }}>{baker.bio}</p>
                         )}
                         {baker.specialties?.length > 0 && (
                           <div className="flex flex-wrap gap-1 mb-3">
