@@ -13,23 +13,24 @@ export default function Navbar() {
   useEffect(() => { checkUser() }, [])
 
   async function checkUser() {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) { setLoading(false); return }
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { setLoading(false); return }
 
-  const { data: baker } = await supabase.from('bakers').select('id').eq('user_id', session.user.id).maybeSingle()
-  if (baker) { setUserType('baker'); setLoading(false); return }
+    const { data: baker } = await supabase.from('bakers').select('id').eq('user_id', session.user.id).maybeSingle()
+    if (baker) { setUserType('baker'); setLoading(false); return }
 
-  const { data: customer } = await supabase.from('customers').select('id').eq('user_id', session.user.id).maybeSingle()
-  if (customer) { setUserType('customer'); setLoading(false); return }
+    const { data: customer } = await supabase.from('customers').select('id').eq('user_id', session.user.id).maybeSingle()
+    if (customer) { setUserType('customer'); setLoading(false); return }
 
-  setLoading(false)
-}
-useEffect(() => {
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-    checkUser()
-  })
-  return () => subscription.unsubscribe()
-}, [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      checkUser()
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -47,6 +48,12 @@ useEffect(() => {
       <div className="flex items-center gap-3">
         <Link href="/bakers" className="text-sm font-medium" style={{ color: '#2d1a0e' }}>
           Browse Bakers
+        </Link>
+        <Link href="/for-bakers" className="text-sm font-medium" style={{ color: '#2d1a0e' }}>
+          For Bakers
+        </Link>
+        <Link href="/faq" className="text-sm font-medium" style={{ color: '#2d1a0e' }}>
+          FAQ
         </Link>
 
         {!loading && (
