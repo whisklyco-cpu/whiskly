@@ -321,15 +321,20 @@ export default function BakerDashboard() {
   }
 
   async function connectStripe() {
-    const { data: { user } } = await supabase.auth.getUser()
-    const res = await fetch('/api/stripe/connect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bakerId: baker.id, email: user?.email })
+  const { data: { user } } = await supabase.auth.getUser()
+  const res = await fetch('/api/stripe/connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      baker_id: baker.id,
+      email: user?.email,
+      return_url: window.location.origin + '/dashboard/baker',
     })
-    const data = await res.json()
-    if (data.url) window.location.href = data.url
-  }
+  })
+  const data = await res.json()
+  if (data.error) { alert('Error: ' + data.error); return }
+  if (data.url) window.location.href = data.url
+}
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
