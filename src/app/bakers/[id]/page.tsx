@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 
-// ── Star display component ──────────────────────────────────────────────────
 function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
   const full = Math.floor(rating)
   const half = rating - full >= 0.5
@@ -32,7 +31,7 @@ export default function BakerProfile() {
   const router = useRouter()
   const [baker, setBaker] = useState<any>(null)
   const [portfolio, setPortfolio] = useState<any[]>([])
-  const [reviews, setReviews] = useState<any[]>([])   // ← new
+  const [reviews, setReviews] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -42,7 +41,14 @@ export default function BakerProfile() {
   const [inspirationPreviews, setInspirationPreviews] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const addressInputRef = useRef<HTMLInputElement>(null)
-  const autocompleteRef = useRef<any>(null)
+
+  // Message modal state
+  const [showMessageModal, setShowMessageModal] = useState(false)
+  const [messageText, setMessageText] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [messageSent, setMessageSent] = useState(false)
+  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [currentCustomer, setCurrentCustomer] = useState<any>(null)
 
   const [form, setForm] = useState({
     customer_name: '',
@@ -80,6 +86,19 @@ export default function BakerProfile() {
     if (form.fulfillment_type === 'delivery') loadGoogleMaps()
   }, [form.fulfillment_type, loadGoogleMaps])
 
+  // Load current user for message feature
+  useEffect(() => {
+    async function loadUser() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      setCurrentUser(session.user)
+      const { data: customerData } = await supabase
+        .from('customers').select('*').eq('user_id', session.user.id).maybeSingle()
+      setCurrentCustomer(customerData)
+    }
+    loadUser()
+  }, [])
+
   async function handleAddressInput(value: string) {
     setForm(f => ({ ...f, delivery_address: value }))
     if (!value || value.length < 3) {
@@ -94,7 +113,6 @@ export default function BakerProfile() {
       setAddressSuggestions(suggestions.slice(0, 5))
       setShowSuggestions(suggestions.length > 0)
     } catch (err) {
-      console.error('Autocomplete error:', err)
       setAddressSuggestions([])
       setShowSuggestions(false)
     }
@@ -140,13 +158,8 @@ export default function BakerProfile() {
         .from('portfolio_items').select('*').eq('baker_id', id)
         .eq('is_visible', true).order('created_at', { ascending: false })
       setPortfolio(portfolioData || [])
-
-      // ── Load reviews ──────────────────────────────────────────────────────
       const { data: reviewData } = await supabase
-        .from('reviews')
-        .select('*')
-        .eq('baker_id', id)
-        .order('created_at', { ascending: false })
+        .from('reviews').select('*').eq('baker_id', id).order('created_at', { ascending: false })
       setReviews(reviewData || [])
     }
     setLoading(false)
@@ -175,15 +188,43 @@ export default function BakerProfile() {
     for (const file of inspirationFiles) {
       const ext = file.name.split('.').pop()
       const fileName = orderId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + ext
-      const { error } = await supabase.storage
-        .from('order-inspirations')
-        .upload(fileName, file, { upsert: true })
+      const { error } = await supabase.storage.from('order-inspirations').upload(fileName, file, { upsert: true })
       if (!error) {
         const { data } = supabase.storage.from('order-inspirations').getPublicUrl(fileName)
         urls.push(data.publicUrl)
       }
     }
     return urls
+  }
+
+  async function sendMessage() {
+    if (!messageText.trim() || !baker) return
+
+    // If not logged in, redirect to login
+    if (!currentUser) {
+      router.push('/login?redirect=/bakers/' + id)
+      return
+    }
+
+    setSendingMessage(true)
+    try {
+      await supabase.from('messages').insert({
+        sender_id: currentUser.id,
+        receiver_id: baker.user_id,
+        baker_id: baker.id,
+        order_id: null,
+        content: messageText.trim(),
+      })
+      setMessageSent(true)
+      setMessageText('')
+      setTimeout(() => {
+        setShowMessageModal(false)
+        setMessageSent(false)
+      }, 2000)
+    } catch (err) {
+      console.error('Message error:', err)
+    }
+    setSendingMessage(false)
   }
 
   async function handleSubmit() {
@@ -283,6 +324,77 @@ export default function BakerProfile() {
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
       <Navbar />
 
+      {/* Message Modal */}
+      {showMessageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            {messageSent ? (
+              <div className="text-center py-6">
+                <p className="text-3xl mb-3">✓</p>
+                <p className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Message sent!</p>
+                <p className="text-sm" style={{ color: '#5c3d2e' }}>{baker.business_name} will reply in your messages.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="font-bold text-lg" style={{ color: '#2d1a0e' }}>Message {baker.business_name}</h3>
+                    <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Ask a question before placing an order</p>
+                  </div>
+                  <button onClick={() => { setShowMessageModal(false); setMessageText('') }}
+                    className="text-sm opacity-50 hover:opacity-100" style={{ color: '#2d1a0e' }}>✕</button>
+                </div>
+
+                {!currentUser ? (
+                  <div className="text-center py-4">
+                    <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>You need to be signed in to message a baker.</p>
+                    <div className="flex gap-3">
+                      <Link href={'/login?redirect=/bakers/' + id}
+                        className="flex-1 text-center py-3 rounded-xl border text-sm font-semibold"
+                        style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
+                        Sign In
+                      </Link>
+                      <Link href={'/signup?redirect=/bakers/' + id}
+                        className="flex-1 text-center py-3 rounded-xl text-white text-sm font-semibold"
+                        style={{ backgroundColor: '#2d1a0e' }}>
+                        Create Account
+                      </Link>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      value={messageText}
+                      onChange={e => setMessageText(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                      rows={4}
+                      placeholder={'Hi! I\'m interested in ordering a custom cake for...'}
+                      autoFocus
+                      className="w-full px-4 py-3 rounded-xl border text-sm resize-none mb-4"
+                      style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                    <div className="flex gap-3">
+                      <button onClick={() => { setShowMessageModal(false); setMessageText('') }}
+                        className="flex-1 py-3 rounded-xl border text-sm font-semibold"
+                        style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+                        Cancel
+                      </button>
+                      <button onClick={sendMessage} disabled={sendingMessage || !messageText.trim()}
+                        className="flex-1 py-3 rounded-xl text-white text-sm font-semibold"
+                        style={{ backgroundColor: '#2d1a0e', opacity: (!messageText.trim() || sendingMessage) ? 0.6 : 1 }}>
+                        {sendingMessage ? 'Sending...' : 'Send Message'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-center mt-3" style={{ color: '#5c3d2e' }}>
+                      Replies will appear in your <Link href="/dashboard/customer?tab=messages" className="underline">messages</Link>
+                    </p>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-10">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
 
@@ -309,20 +421,17 @@ export default function BakerProfile() {
                   </div>
                   <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>📍 {baker.city}, {baker.state}</p>
 
-                  {/* ── Rating summary in header ── */}
                   {avgRating && reviewCount > 0 ? (
                     <div className="flex items-center gap-2 mb-3">
                       <Stars rating={avgRating} size={15} />
                       <span className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{avgRating.toFixed(1)}</span>
-                      <span className="text-sm" style={{ color: '#5c3d2e' }}>
-                        ({reviewCount} review{reviewCount !== 1 ? 's' : ''})
-                      </span>
+                      <span className="text-sm" style={{ color: '#5c3d2e' }}>({reviewCount} review{reviewCount !== 1 ? 's' : ''})</span>
                     </div>
                   ) : (
                     <p className="text-xs mb-3" style={{ color: '#9c7b6b' }}>No reviews yet</p>
                   )}
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 mb-4">
                     {baker.starting_price && (
                       <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>Starting from ${baker.starting_price}</span>
                     )}
@@ -333,6 +442,14 @@ export default function BakerProfile() {
                       <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#2d1a0e' }}>@{baker.instagram_handle}</span>
                     )}
                   </div>
+
+                  {/* Message Baker button */}
+                  <button
+                    onClick={() => setShowMessageModal(true)}
+                    className="px-5 py-2.5 rounded-xl text-sm font-semibold border"
+                    style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
+                    Message {baker.business_name}
+                  </button>
                 </div>
               </div>
             </div>
@@ -404,7 +521,7 @@ export default function BakerProfile() {
               </div>
             </div>
 
-            {/* ── Reviews section ──────────────────────────────────────────── */}
+            {/* Reviews */}
             <div className="bg-white rounded-2xl p-8 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Reviews</h2>
@@ -416,7 +533,6 @@ export default function BakerProfile() {
                   </div>
                 )}
               </div>
-
               {reviews.length === 0 ? (
                 <div className="text-center py-8 rounded-xl" style={{ backgroundColor: '#faf8f6' }}>
                   <p className="text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>No reviews yet</p>
@@ -428,9 +544,7 @@ export default function BakerProfile() {
                     <div key={review.id} className="pb-5 border-b last:border-b-0 last:pb-0" style={{ borderColor: '#f5f0eb' }}>
                       <div className="flex items-start justify-between mb-2">
                         <div>
-                          <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>
-                            {review.customer_name || 'Verified Customer'}
-                          </p>
+                          <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{review.customer_name || 'Verified Customer'}</p>
                           <p className="text-xs mt-0.5" style={{ color: '#9c7b6b' }}>
                             {new Date(review.created_at).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}
                             {review.event_type && <span> · {review.event_type}</span>}
@@ -446,7 +560,6 @@ export default function BakerProfile() {
                 </div>
               )}
             </div>
-            {/* ── End reviews ─────────────────────────────────────────────── */}
 
           </div>
 
@@ -473,7 +586,6 @@ export default function BakerProfile() {
                   )}
 
                   <div className="flex flex-col gap-3">
-
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Your Name <span style={{ color: '#dc2626' }}>*</span></label>
                       <input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })}
@@ -543,9 +655,7 @@ export default function BakerProfile() {
                     {form.fulfillment_type === 'delivery' && (
                       <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
                         <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>Delivery Address <span style={{ color: '#dc2626' }}>*</span></p>
-                        <p className="text-xs" style={{ color: '#5c3d2e' }}>
-                          Only your city, state & zip are shown to the baker until they accept your order.
-                        </p>
+                        <p className="text-xs" style={{ color: '#5c3d2e' }}>Only your city, state & zip are shown to the baker until they accept your order.</p>
                         <div className="relative">
                           <input
                             ref={addressInputRef}
@@ -580,9 +690,7 @@ export default function BakerProfile() {
                               {form.delivery_city}{form.delivery_state ? ', ' + form.delivery_state : ''}{form.delivery_zip ? ' ' + form.delivery_zip : ''}
                             </span>
                             <button type="button" onClick={() => setForm(f => ({ ...f, delivery_address: '', delivery_city: '', delivery_state: '', delivery_zip: '' }))}
-                              className="text-xs underline" style={{ color: '#166534' }}>
-                              Change
-                            </button>
+                              className="text-xs underline" style={{ color: '#166534' }}>Change</button>
                           </div>
                         ) : (attempted && (!form.delivery_city || !form.delivery_zip)) ? (
                           <p className="text-xs" style={{ color: '#dc2626' }}>Select an address from the dropdown to autofill city, state & zip</p>
@@ -622,45 +730,28 @@ export default function BakerProfile() {
 
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>
-                        Inspiration Photos
-                        <span className="font-normal ml-1" style={{ color: '#5c3d2e' }}>(up to 3)</span>
+                        Inspiration Photos <span className="font-normal ml-1" style={{ color: '#5c3d2e' }}>(up to 3)</span>
                       </label>
-
                       {inspirationPreviews.length > 0 && (
                         <div className="flex gap-2 mb-2 flex-wrap">
                           {inspirationPreviews.map((src, i) => (
                             <div key={i} className="relative">
-                              <img src={src} alt={'Inspiration ' + (i + 1)}
-                                className="w-16 h-16 object-cover rounded-lg border"
-                                style={{ borderColor: '#e0d5cc' }} />
-                              <button
-                                onClick={() => removeInspirationPhoto(i)}
+                              <img src={src} alt={'Inspiration ' + (i + 1)} className="w-16 h-16 object-cover rounded-lg border" style={{ borderColor: '#e0d5cc' }} />
+                              <button onClick={() => removeInspirationPhoto(i)}
                                 className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full text-white flex items-center justify-center text-xs font-bold"
-                                style={{ backgroundColor: '#991b1b' }}>
-                                ✕
-                              </button>
+                                style={{ backgroundColor: '#991b1b' }}>✕</button>
                             </div>
                           ))}
                         </div>
                       )}
-
                       {inspirationFiles.length < 3 && (
                         <label className="cursor-pointer flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium w-full"
                           style={{ borderColor: '#e0d5cc', color: '#5c3d2e', backgroundColor: '#faf8f6' }}>
                           <span>+ Add photo</span>
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            className="hidden"
-                            onChange={handleInspirationChange} />
+                          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleInspirationChange} />
                         </label>
                       )}
-
-                      <p className="text-xs mt-1.5 leading-relaxed" style={{ color: '#5c3d2e' }}>
-                        Baker uses photos for inspiration only — not exact replicas.
-                      </p>
+                      <p className="text-xs mt-1.5 leading-relaxed" style={{ color: '#5c3d2e' }}>Baker uses photos for inspiration only — not exact replicas.</p>
                     </div>
 
                     <button onClick={handleSubmit} disabled={submitting}
@@ -669,8 +760,13 @@ export default function BakerProfile() {
                       {submitting ? 'Sending...' : 'Start Your Order with ' + baker.business_name}
                     </button>
 
+                    <button onClick={() => setShowMessageModal(true)}
+                      className="w-full py-3 rounded-xl text-sm font-semibold border"
+                      style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+                      Have a question? Message first
+                    </button>
+
                     <p className="text-xs text-center" style={{ color: '#5c3d2e' }}>No payment until your baker confirms</p>
-                    <p className="text-xs text-center" style={{ color: '#8B4513' }}>* Required fields</p>
                   </div>
                 </>
               )}
