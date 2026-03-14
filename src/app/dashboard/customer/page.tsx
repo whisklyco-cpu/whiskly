@@ -193,8 +193,8 @@ function CustomerDashboardInner() {
     setSendingMessage(true)
     const { data: bakerUser } = await supabase.from('bakers').select('user_id').eq('id', activeConvo.baker.id).maybeSingle()
 const conv = conversations.find(c => c.thread_key === activeOrderId)
-    await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: bakerUser?.user_id, baker_id: activeConvo.baker.id, order_id: conv?.order_id || null, content: newMessage.trim() })    setNewMessage('')
-    setSendingMessage(false)
+await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: bakerUser?.user_id, baker_id: activeConvo.baker.id, order_id: conv?.order_id || null, content: newMessage.trim() })
+    setNewMessage('')    setSendingMessage(false)
     loadThread(activeOrderId)
     loadConversations()
   }
