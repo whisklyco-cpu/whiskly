@@ -69,8 +69,11 @@ function CustomerDashboardInner() {
   }, [orders, searchParams])
 
   useEffect(() => {
-    if (activeTab === 'messages' && currentUserId) loadConversations()
-  }, [activeTab, currentUserId])
+  if (activeTab === 'messages' && activeOrderId && currentUserId) {
+    const conv = conversations.find(c => c.thread_key === activeOrderId)
+    loadThread(conv?.order_id || null, conv?.baker_id)
+  }
+}, [activeOrderId, activeTab, currentUserId])
 
   useEffect(() => {
     if (currentUserId) loadConversations()
@@ -154,8 +157,10 @@ function CustomerDashboardInner() {
     else if (!activeOrderId && threads.length > 0) setActiveOrderId(threads[0].order_id || null)
   }
 
-  async function loadThread(orderId: string) {
-    if (!currentUserId) return
+  async function loadThread(orderId: string | null, bakerId?: string) {
+  if (!currentUserId) return
+
+  if (orderId) {
     const order = orders.find(o => o.id === orderId)
     if (order) {
       setActiveConvo({ baker: order.bakers, order })
@@ -166,14 +171,29 @@ function CustomerDashboardInner() {
     const { data: msgs } = await supabase.from('messages').select('*').eq('order_id', orderId).order('created_at', { ascending: true })
     setMessages(msgs || [])
     await supabase.from('messages').update({ read_at: new Date().toISOString() }).eq('order_id', orderId).eq('receiver_id', currentUserId).is('read_at', null)
+  } else if (bakerId) {
+    // General inquiry thread — no order_id
+    const { data: bakerData } = await supabase.from('bakers').select('id, business_name, profile_photo_url, city, state').eq('id', bakerId).maybeSingle()
+    if (bakerData) setActiveConvo({ baker: bakerData, order: null })
+    const { data: msgs } = await supabase.from('messages').select('*')
+      .eq('baker_id', bakerId)
+      .is('order_id', null)
+      .or('sender_id.eq.' + currentUserId + ',receiver_id.eq.' + currentUserId)
+      .order('created_at', { ascending: true })
+    setMessages(msgs || [])
+    await supabase.from('messages').update({ read_at: new Date().toISOString() })
+      .eq('baker_id', bakerId)
+      .is('order_id', null)
+      .eq('receiver_id', currentUserId).is('read_at', null)
   }
+}
 
   async function sendMessage() {
-    if (!newMessage.trim() || !activeOrderId || !currentUserId || !activeConvo) return
+  if (!newMessage.trim() || !currentUserId || !activeConvo) return
     setSendingMessage(true)
     const { data: bakerUser } = await supabase.from('bakers').select('user_id').eq('id', activeConvo.baker.id).maybeSingle()
-    await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: bakerUser?.user_id, baker_id: activeConvo.baker.id, order_id: activeOrderId, content: newMessage.trim() })
-    setNewMessage('')
+const conv = conversations.find(c => c.thread_key === activeOrderId)
+    await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: bakerUser?.user_id, baker_id: activeConvo.baker.id, order_id: conv?.order_id || null, content: newMessage.trim() })    setNewMessage('')
     setSendingMessage(false)
     loadThread(activeOrderId)
     loadConversations()
@@ -671,7 +691,7 @@ function CustomerDashboardInner() {
                       <Link href="/bakers" className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Browse Bakers</Link>
                     </div>
                   ) : conversations.map(conv => (
-                    <button key={conv.thread_key} onClick={() => { setActiveOrderId(conv.order_id); loadThread(conv.order_id) }}
+  <button key={conv.thread_key} onClick={() => { setActiveOrderId(conv.thread_key); loadThread(conv.order_id, conv.baker_id) }}
                       className="w-full px-4 py-3 flex items-center gap-3 text-left border-b"
                       style={{ borderColor: '#e0d5cc', backgroundColor: activeOrderId === conv.order_id ? '#f5f0eb' : 'transparent', borderLeft: activeOrderId === conv.order_id ? '3px solid #2d1a0e' : '3px solid transparent' }}>
                       <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
