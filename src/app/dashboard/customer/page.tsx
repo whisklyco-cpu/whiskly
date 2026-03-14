@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Navbar from '@/components/Navbar'
+import { PaymentModal } from '@/components/PaymentModal'
 
 function CustomerDashboardInner() {
   const router = useRouter()
@@ -35,6 +36,10 @@ function CustomerDashboardInner() {
   const [newDateMonth, setNewDateMonth] = useState('')
   const [newDateDay, setNewDateDay] = useState('')
   const [savingDate, setSavingDate] = useState(false)
+
+  // Payment state
+  const [paymentOrder, setPaymentOrder] = useState<any>(null)
+  const [paymentType, setPaymentType] = useState<'deposit' | 'remainder'>('deposit')
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -262,6 +267,31 @@ function CustomerDashboardInner() {
     return Math.ceil((target.getTime() - today.getTime()) / 86400000)
   }
 
+  // Payment helpers
+  function needsDeposit(order: any) {
+    return order.status === 'confirmed' && !order.deposit_paid_at && order.budget
+  }
+
+  function needsRemainder(order: any) {
+    if (!order.deposit_paid_at || order.remainder_paid_at) return false
+    if (order.status !== 'confirmed' && order.status !== 'in_progress') return false
+    const daysUntil = getDaysUntil(order.event_date)
+    return daysUntil <= 2 // show reminder within 48hrs of event
+  }
+
+  function openPayment(order: any, type: 'deposit' | 'remainder') {
+    setPaymentOrder(order)
+    setPaymentType(type)
+  }
+
+  async function onPaymentSuccess() {
+    setPaymentOrder(null)
+    // Reload orders to reflect paid status
+    await loadDashboard()
+    setShowSuccessToast(true)
+    setTimeout(() => setShowSuccessToast(false), 4000)
+  }
+
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
   async function handleSignOut() { await supabase.auth.signOut(); router.push('/') }
@@ -282,6 +312,19 @@ function CustomerDashboardInner() {
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
       <Navbar />
+
+      {/* Payment Modal */}
+      {paymentOrder && (
+        <PaymentModal
+          orderId={paymentOrder.id}
+          type={paymentType}
+          amount={paymentType === 'deposit' ? Math.round(paymentOrder.budget * 50) : (paymentOrder.amount_remainder || Math.round(paymentOrder.budget * 50))}
+          eventType={paymentOrder.event_type}
+          bakerName={paymentOrder.bakers?.business_name || 'Baker'}
+          onClose={() => setPaymentOrder(null)}
+          onSuccess={onPaymentSuccess}
+        />
+      )}
 
       {reviewOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
@@ -312,8 +355,8 @@ function CustomerDashboardInner() {
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3.5 rounded-2xl shadow-lg flex items-center gap-3" style={{ backgroundColor: '#2d1a0e', color: 'white', minWidth: '300px' }}>
           <span className="text-lg">🎂</span>
           <div>
-            <p className="font-semibold text-sm">Order request sent!</p>
-            <p className="text-xs mt-0.5" style={{ color: '#e0c9b0' }}>Your baker will review and respond soon.</p>
+            <p className="font-semibold text-sm">Payment successful!</p>
+            <p className="text-xs mt-0.5" style={{ color: '#e0c9b0' }}>Your order is confirmed.</p>
           </div>
           <button onClick={() => setShowSuccessToast(false)} className="ml-auto text-xs opacity-60 hover:opacity-100">✕</button>
         </div>
@@ -421,6 +464,49 @@ function CustomerDashboardInner() {
                       )}
                     </div>
                   </div>
+
+                  {/* Deposit payment prompt */}
+                  {needsDeposit(order) && (
+                    <div className="mb-4 rounded-xl p-4 flex items-center justify-between gap-4" style={{ backgroundColor: '#fef9c3', border: '1px solid #fde68a' }}>
+                      <div>
+                        <p className="text-sm font-bold" style={{ color: '#854d0e' }}>Deposit required to confirm your order</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#92400e' }}>
+                          Pay 50% now (${(order.budget / 2).toFixed(2)}) — remainder due 48hrs before your event.
+                        </p>
+                      </div>
+                      <button onClick={() => openPayment(order, 'deposit')}
+                        className="flex-shrink-0 px-5 py-2.5 rounded-xl text-white text-sm font-bold"
+                        style={{ backgroundColor: '#2d1a0e' }}>
+                        Pay Deposit
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Deposit paid confirmation */}
+                  {order.deposit_paid_at && !order.remainder_paid_at && (
+                    <div className="mb-4 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ backgroundColor: '#dcfce7', border: '1px solid #bbf7d0' }}>
+                      <div>
+                        <p className="text-xs font-semibold" style={{ color: '#166534' }}>✓ Deposit paid</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#166534' }}>
+                          Remaining balance of ${order.amount_remainder ? (order.amount_remainder / 100).toFixed(2) : (order.budget / 2).toFixed(2)} due 48hrs before your event.
+                        </p>
+                      </div>
+                      {needsRemainder(order) && (
+                        <button onClick={() => openPayment(order, 'remainder')}
+                          className="flex-shrink-0 px-4 py-2 rounded-xl text-white text-xs font-bold"
+                          style={{ backgroundColor: '#166534' }}>
+                          Pay Balance
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Fully paid */}
+                  {order.deposit_paid_at && order.remainder_paid_at && (
+                    <div className="mb-4 rounded-xl px-4 py-3" style={{ backgroundColor: '#dcfce7', border: '1px solid #bbf7d0' }}>
+                      <p className="text-xs font-semibold" style={{ color: '#166534' }}>✓ Fully paid — enjoy your event!</p>
+                    </div>
+                  )}
 
                   {order.status === 'ready' && (
                     <div className="mb-4 rounded-xl p-4" style={{ backgroundColor: '#f3e8ff' }}>
@@ -558,7 +644,7 @@ function CustomerDashboardInner() {
                       <button onClick={() => markReceived(order.id)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166534' }}>Mark as Received</button>
                     )}
                     {order.status === 'ready' && order.fulfillment_type === 'pickup' && order.handoff_photo_url && !order.pickup_confirmed_at && (
-                      <button onClick={() => confirmPickup(order)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166534' }}>Confirm Pickup</button>
+                      <button onClick={() => confirmPickup(order)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166634' }}>Confirm Pickup</button>
                     )}
                     {order.status === 'declined' && (
                       <Link href="/bakers" className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Find Another Baker</Link>
