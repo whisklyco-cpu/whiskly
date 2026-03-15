@@ -285,16 +285,21 @@ Format your response as JSON with keys: Instagram, TikTok, Facebook, Threads, Le
         <div className="bg-white rounded-2xl p-8 shadow-sm w-full max-w-sm">
           <h1 className="text-2xl font-bold mb-1" style={{ color: '#2d1a0e' }}>Marketing Portal</h1>
           <p className="text-sm mb-6" style={{ color: '#5c3d2e' }}>Whiskly marketing team access</p>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAuth()}
-            placeholder="Enter marketing password"
-            className="w-full px-4 py-3 rounded-xl border text-sm mb-3"
-            style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-          {authError && <p className="text-xs mb-3" style={{ color: '#dc2626' }}>{authError}</p>}
-          <button onClick={handleAuth} className="w-full py-3 rounded-xl text-white font-semibold text-sm" style={{ backgroundColor: '#2d1a0e' }}>
-            Sign In
-          </button>
-        </div>
+          <div className="relative mb-3">
+  <input
+    type={showPassword ? 'text' : 'password'}
+    value={password}
+    onChange={e => setPassword(e.target.value)}
+    onKeyDown={e => e.key === 'Enter' && handleAuth()}
+    placeholder="Enter marketing password"
+    className="w-full px-4 py-3 rounded-xl border text-sm"
+    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+  <button type="button" onClick={() => setShowPassword(!showPassword)}
+    className="absolute right-3 top-3 text-xs font-semibold"
+    style={{ color: '#5c3d2e' }}>
+    {showPassword ? 'Hide' : 'Show'}
+  </button>
+</div>
       </div>
     )
   }
