@@ -774,8 +774,4 @@ export default function BakerProfile() {
       </footer>
     </main>
   )
-}<button onClick={() => setShowMessageModal(true)}
-  className="w-full py-3 rounded-xl text-sm font-semibold border"
-  style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
-  Have a question? Message first
-</button>
+}

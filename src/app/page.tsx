@@ -9,9 +9,22 @@ export default function Home() {
   const [loaded, setLoaded] = useState(false)
   const [featuredBaker, setFeaturedBaker] = useState<any>(null)
   const [zip, setZip] = useState('')
+const [stats, setStats] = useState({ orders: 0, bakers: 0, revenue: 0 })
 
   useEffect(() => {
     setTimeout(() => setLoaded(true), 100)
+    async function loadStats() {
+  const [ordersRes, bakersRes] = await Promise.all([
+    supabase.from('orders').select('id, amount_total, budget, deposit_paid_at', { count: 'exact' }),
+    supabase.from('bakers').select('id', { count: 'exact' }).eq('is_active', true).eq('profile_complete', true),
+  ])
+  const orders = ordersRes.data || []
+  const totalOrders = ordersRes.count || 0
+  const totalBakers = bakersRes.count || 0
+  const totalRevenue = orders.filter(o => o.deposit_paid_at).reduce((sum, o) => sum + (o.amount_total || (o.budget * 100) || 0), 0) / 100
+  setStats({ orders: totalOrders, bakers: totalBakers, revenue: totalRevenue })
+}
+loadStats()
     async function loadFeatured() {
       const { data } = await supabase
         .from('bakers')
@@ -88,12 +101,16 @@ export default function Home() {
 
             {/* Stats */}
             <div className="flex gap-6 mt-8 pt-6 border-t" style={{ borderColor: '#e0d5cc' }}>
-              {[['100+', 'Orders Placed'], ['25', 'Local Bakers'], ['$12K', 'Revenue Generated']].map(([num, label]) => (
-                <div key={label}>
-                  <p className="text-xl md:text-2xl font-bold" style={{ color: '#2d1a0e' }}>{num}</p>
-                  <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{label}</p>
-                </div>
-              ))}
+              {[
+  [stats.orders > 0 ? stats.orders + '+' : '0', 'Orders Placed'],
+  [stats.bakers > 0 ? stats.bakers + '+' : '0', 'Local Bakers'],
+  [stats.revenue > 0 ? '$' + (stats.revenue >= 1000 ? (stats.revenue / 1000).toFixed(1) + 'K' : stats.revenue.toFixed(0)) : '$0', 'Revenue Generated']
+].map(([num, label]) => (
+  <div key={label as string}>
+    <p className="text-xl md:text-2xl font-bold" style={{ color: '#2d1a0e' }}>{num}</p>
+    <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{label}</p>
+  </div>
+))}
             </div>
           </div>
 
