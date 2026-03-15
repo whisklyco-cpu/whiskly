@@ -198,13 +198,12 @@ export default function BakerProfile() {
   }
 
   async function sendMessage() {
-    if (!messageText.trim() || !baker) return
+  if (!messageText.trim() || !baker) return
 
-    // If not logged in, redirect to login
-    if (!currentUser) {
-      router.push('/login?redirect=/bakers/' + id)
-      return
-    }
+  if (!currentUser) {
+    router.push('/login?redirect=/bakers/' + id)
+    return
+  }
 
     setSendingMessage(true)
     try {
@@ -346,10 +345,10 @@ export default function BakerProfile() {
                 </div>
 
                 {!currentUser ? (
-                  <div className="text-center py-4">
-                    <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>You need to be signed in to message a baker.</p>
-                    <div className="flex gap-3">
-                      <Link href={'/login?redirect=/bakers/' + id}
+  <div className="text-center py-4">
+    <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Sign in to message this baker. Messaging is available after placing an order.</p>
+    <div className="flex gap-3">
+      <Link href={'/login?redirect=/bakers/' + id}
                         className="flex-1 text-center py-3 rounded-xl border text-sm font-semibold"
                         style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
                         Sign In
@@ -760,12 +759,7 @@ export default function BakerProfile() {
                       {submitting ? 'Sending...' : 'Start Your Order with ' + baker.business_name}
                     </button>
 
-                    <button onClick={() => setShowMessageModal(true)}
-                      className="w-full py-3 rounded-xl text-sm font-semibold border"
-                      style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
-                      Have a question? Message first
-                    </button>
-
+                    
                     <p className="text-xs text-center" style={{ color: '#5c3d2e' }}>No payment until your baker confirms</p>
                   </div>
                 </>
@@ -780,4 +774,8 @@ export default function BakerProfile() {
       </footer>
     </main>
   )
-}
+}<button onClick={() => setShowMessageModal(true)}
+  className="w-full py-3 rounded-xl text-sm font-semibold border"
+  style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+  Have a question? Message first
+</button>
