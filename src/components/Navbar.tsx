@@ -93,6 +93,9 @@ export default function Navbar() {
           <Link href="/bakers" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#2d1a0e', borderColor: '#f5f0eb' }}>Browse Bakers</Link>
           <Link href="/for-bakers" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#2d1a0e', borderColor: '#f5f0eb' }}>For Bakers</Link>
           <Link href="/faq" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#2d1a0e', borderColor: '#f5f0eb' }}>FAQ</Link>
+          <Link href="/contact" className="text-sm font-medium" style={{ color: '#2d1a0e' }}>
+  Support
+</Link>
 
           <div className="pt-3 flex flex-col gap-2">
             {!loading && (
