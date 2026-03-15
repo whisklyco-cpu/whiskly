@@ -121,6 +121,29 @@ export function PaymentModal({ orderId, type, amount, eventType, bakerName, onCl
             </p>
           )}
         </div>
+        {/* Fee breakdown */}
+<div className="mb-4 p-4 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+  <div className="flex justify-between text-sm mb-2">
+    <span style={{ color: '#5c3d2e' }}>
+      {type === 'deposit' ? '50% deposit' : 'Remaining balance'}
+    </span>
+    <span style={{ color: '#2d1a0e' }}>
+      ${(amount / 100).toFixed(2)}
+    </span>
+  </div>
+  <div className="flex justify-between text-sm mb-2">
+    <span style={{ color: '#5c3d2e' }}>Platform fee (3%)</span>
+    <span style={{ color: '#2d1a0e' }}>
+      ${(Math.round(amount * 0.03) / 100).toFixed(2)}
+    </span>
+  </div>
+  <div className="flex justify-between text-sm font-bold border-t pt-2 mt-2" style={{ borderColor: '#e0d5cc' }}>
+    <span style={{ color: '#2d1a0e' }}>Total due today</span>
+    <span style={{ color: '#2d1a0e' }}>
+      ${((amount + Math.round(amount * 0.03)) / 100).toFixed(2)}
+    </span>
+  </div>
+</div>
 
         {loadingIntent && (
           <div className="text-center py-8">

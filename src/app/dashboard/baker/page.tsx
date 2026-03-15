@@ -925,6 +925,12 @@ export default function BakerDashboard() {
                     <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>
                       {baker?.stripe_account_id ? 'Stripe Connected' : 'Connect Stripe'}
                     </p>
+                    <div className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc', backgroundColor: '#fef9c3' }}>
+  <p className="text-sm font-semibold mb-1" style={{ color: '#854d0e' }}>Sales Tax Reminder</p>
+  <p className="text-xs leading-relaxed" style={{ color: '#92400e' }}>
+    You are responsible for understanding and collecting any applicable sales tax in your state. Whiskly does not collect or remit sales tax on your behalf. Requirements vary by state and baker type. When in doubt, consult a tax professional.
+  </p>
+</div>
                     <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
                       {baker?.stripe_account_id
                         ? 'You can receive payments from customers'

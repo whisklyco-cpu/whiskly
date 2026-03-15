@@ -26,13 +26,15 @@ export async function POST(req: NextRequest) {
     if (!order.bakers?.stripe_account_id) return NextResponse.json({ error: 'Baker has not connected Stripe account' }, { status: 400 })
     if (order.remainder_paid_at) return NextResponse.json({ error: 'Remainder already paid' }, { status: 400 })
 
-    const remainderCents = order.amount_remainder
-    const commissionRate = order.bakers.is_pro ? PRO_COMMISSION : FREE_COMMISSION
-    const remainderCommissionCents = Math.round(remainderCents * commissionRate)
-    const bakerRemainderCents = remainderCents - remainderCommissionCents
+  const remainderCents = order.amount_remainder
+const commissionRate = order.bakers.is_pro ? PRO_COMMISSION : FREE_COMMISSION
+const remainderCommissionCents = Math.round(remainderCents * commissionRate)
+const bakerRemainderCents = remainderCents - remainderCommissionCents
+const platformFeeCents = Math.round(remainderCents * 0.03)
+const customerRemainderCents = remainderCents + platformFeeCents
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: remainderCents,
+  amount: customerRemainderCents,
       currency: 'usd',
       automatic_payment_methods: { enabled: true },
       transfer_data: {
@@ -52,9 +54,11 @@ export async function POST(req: NextRequest) {
     }).eq('id', order_id)
 
     return NextResponse.json({
-      client_secret: paymentIntent.client_secret,
-      remainder_amount: remainderCents,
-    })
+  client_secret: paymentIntent.client_secret,
+  remainder_amount: remainderCents,
+  platform_fee: platformFeeCents,
+  customer_total: customerRemainderCents,
+})
   } catch (err: any) {
     console.error('Stripe remainder error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })

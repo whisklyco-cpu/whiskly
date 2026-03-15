@@ -27,13 +27,16 @@ export async function POST(req: NextRequest) {
     if (!order.budget) return NextResponse.json({ error: 'Order has no budget set' }, { status: 400 })
 
     const totalCents = Math.round(order.budget * 100)
-    const depositCents = Math.round(totalCents * 0.5)
-    const commissionRate = order.bakers.is_pro ? PRO_COMMISSION : FREE_COMMISSION
-    const depositCommissionCents = Math.round(depositCents * commissionRate)
-    const bakerDepositCents = depositCents - depositCommissionCents
+const depositCents = Math.round(totalCents * 0.5)
+const commissionRate = order.bakers.is_pro ? PRO_COMMISSION : FREE_COMMISSION
+const depositCommissionCents = Math.round(depositCents * commissionRate)
+const bakerDepositCents = depositCents - depositCommissionCents
+// 3% platform fee passed to customer
+const platformFeeCents = Math.round(depositCents * 0.03)
+const customerDepositCents = depositCents + platformFeeCents
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: depositCents,
+  amount: customerDepositCents,
       currency: 'usd',
       automatic_payment_methods: { enabled: true },
       transfer_data: {
@@ -56,10 +59,12 @@ export async function POST(req: NextRequest) {
     }).eq('id', order_id)
 
     return NextResponse.json({
-      client_secret: paymentIntent.client_secret,
-      deposit_amount: depositCents,
-      total_amount: totalCents,
-    })
+  client_secret: paymentIntent.client_secret,
+  deposit_amount: depositCents,
+  platform_fee: platformFeeCents,
+  customer_total: customerDepositCents,
+  total_amount: totalCents,
+})
   } catch (err: any) {
     console.error('Stripe deposit error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
