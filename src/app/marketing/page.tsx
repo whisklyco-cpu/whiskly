@@ -4,334 +4,235 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-const TABS = ['Today', 'Featured', 'Directory', 'Campaigns', 'Content Hub', 'Social Log', 'Seasonal']
+const TABS = ['Overview', 'Orders', 'Bakers', 'Customers', 'Disputes', 'Applications', 'Accounting']
 
-const PLATFORMS = ['Instagram', 'TikTok', 'Facebook', 'Threads', 'Lemon8']
-
-const PLATFORM_TIPS: Record<string, string> = {
-  Instagram: 'Use 3-5 hashtags, tag location, lead with the visual hook. Best length: 125 chars before "more".',
-  TikTok: 'Keep it punchy. Start with a hook in the first line. Use trending sounds reference. 150 chars max.',
-  Facebook: 'More conversational, longer is okay. Ask a question to drive comments. No hashtag spam.',
-  Threads: 'Short and conversational. Max 500 chars. Feels like Twitter — be direct and human.',
-  Lemon8: 'Lifestyle-forward. More descriptive, like a mini blog. Great for baking aesthetics and recipes.',
-}
-
-export default function MarketingPortal() {
+export default function AdminPanel() {
   const [authed, setAuthed] = useState(false)
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [authError, setAuthError] = useState('')
-  const [activeTab, setActiveTab] = useState('Today')
+  const [activeTab, setActiveTab] = useState('Overview')
 
-  const [bakers, setBakers] = useState<any[]>([])
   const [orders, setOrders] = useState<any[]>([])
-  const [campaigns, setCampaigns] = useState<any[]>([])
-  const [socialLog, setSocialLog] = useState<any[]>([])
+  const [bakers, setBakers] = useState<any[]>([])
+  const [customers, setCustomers] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
-  // Featured baker state
+  const [orderSearch, setOrderSearch] = useState('')
   const [bakerSearch, setBakerSearch] = useState('')
-  const [directorySearch, setDirectorySearch] = useState('')
-  const [directorySpecialty, setDirectorySpecialty] = useState('')
-  const [directoryLocation, setDirectoryLocation] = useState('')
-  const [directoryFilter, setDirectoryFilter] = useState('all')
-
-  // Campaign state
-  const [emailAudience, setEmailAudience] = useState<'bakers' | 'customers' | 'all'>('all')
-  const [emailSubject, setEmailSubject] = useState('')
-  const [emailBody, setEmailBody] = useState('')
-  const [emailPreview, setEmailPreview] = useState(false)
-  const [sendingEmail, setSendingEmail] = useState(false)
-
-  // Content hub state
-  const [selectedBaker, setSelectedBaker] = useState<any>(null)
-  const [selectedPlatform, setSelectedPlatform] = useState('Instagram')
-  const [generatingCaption, setGeneratingCaption] = useState(false)
-  const [generatedCaptions, setGeneratedCaptions] = useState<Record<string, string>>({})
-  const [copiedPlatform, setCopiedPlatform] = useState('')
-
-  // Social log state
-  const [newPost, setNewPost] = useState({ baker_id: '', platform: 'Instagram', caption: '', post_date: new Date().toISOString().slice(0, 10) })
-  const [savingPost, setSavingPost] = useState(false)
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [orderStatusFilter, setOrderStatusFilter] = useState('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
 
   function handleAuth() {
-    if (password === process.env.NEXT_PUBLIC_MARKETING_PASSWORD) {
+    if (password === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
       setAuthed(true)
-      loadData()
+      loadAll()
     } else {
       setAuthError('Incorrect password.')
     }
   }
 
-  async function loadData() {
+  async function loadAll() {
     setLoading(true)
-    const [bakersRes, ordersRes] = await Promise.all([
-      supabase.from('bakers').select('*').eq('is_active', true).order('created_at', { ascending: false }),
-      supabase.from('orders').select('baker_id, status, created_at, budget, amount_total, deposit_paid_at').order('created_at', { ascending: false }),
+    const [ordersRes, bakersRes, customersRes] = await Promise.all([
+      supabase.from('orders').select('*, bakers(id, business_name, city, state, is_pro, stripe_account_id)').order('created_at', { ascending: false }),
+      supabase.from('bakers').select('*').order('created_at', { ascending: false }),
+      supabase.from('customers').select('*').order('created_at', { ascending: false }),
     ])
-    setBakers(bakersRes.data || [])
     setOrders(ordersRes.data || [])
-
-    // Load campaigns from localStorage (simple persistence)
-    const saved = localStorage.getItem('whiskly-campaigns')
-    if (saved) setCampaigns(JSON.parse(saved))
-    const savedPosts = localStorage.getItem('whiskly-social-log')
-    if (savedPosts) setSocialLog(JSON.parse(savedPosts))
-
+    setBakers(bakersRes.data || [])
+    setCustomers(customersRes.data || [])
     setLoading(false)
   }
 
-  // Baker metrics
-  function getBakerMetrics(bakerId: string) {
-    const bakerOrders = orders.filter(o => o.baker_id === bakerId)
-    const completedOrders = bakerOrders.filter(o => o.status === 'complete')
-    const revenue = bakerOrders.filter(o => o.deposit_paid_at).reduce((s, o) => s + (o.amount_total || (o.budget * 100) || 0), 0) / 100
-    return { totalOrders: bakerOrders.length, completedOrders: completedOrders.length, revenue }
+  async function toggleBakerSuspend(baker: any) {
+    const newVal = !baker.is_suspended
+    await supabase.from('bakers').update({ is_suspended: newVal }).eq('id', baker.id)
+    setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_suspended: newVal } : b))
   }
 
-  // Top performers
-  const topPerformers = [...bakers]
-    .map(b => ({ ...b, ...getBakerMetrics(b.id) }))
-    .sort((a, b) => b.completedOrders - a.completedOrders || b.revenue - a.revenue)
-    .slice(0, 5)
-
-  // Featured bakers with days remaining
-  const featuredBakers = bakers.filter(b => b.is_featured)
-  const unfeaturedBakers = bakers.filter(b => !b.is_featured && b.is_active)
-
-  function getDaysAsFeatured(baker: any) {
-    if (!baker.featured_since) return null
-    return Math.floor((Date.now() - new Date(baker.featured_since).getTime()) / 86400000)
+  async function toggleBakerPro(baker: any) {
+    const newVal = !baker.is_pro
+    await supabase.from('bakers').update({ is_pro: newVal }).eq('id', baker.id)
+    setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_pro: newVal } : b))
   }
 
-  async function featureBaker(baker: any) {
-    const now = new Date().toISOString()
-    await supabase.from('bakers').update({ is_featured: true, featured_since: now }).eq('id', baker.id)
-    setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_featured: true, featured_since: now } : b))
+  async function toggleFoundingBaker(baker: any) {
+    const newVal = !baker.is_founding_baker
+    await supabase.from('bakers').update({ is_founding_baker: newVal }).eq('id', baker.id)
+    setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_founding_baker: newVal } : b))
   }
 
-  async function unfeatureBaker(baker: any) {
-    await supabase.from('bakers').update({ is_featured: false, featured_since: null }).eq('id', baker.id)
-    setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_featured: false, featured_since: null } : b))
+  async function toggleFeatured(baker: any) {
+    const newVal = !baker.is_featured
+    await supabase.from('bakers').update({ is_featured: newVal }).eq('id', baker.id)
+    setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_featured: newVal } : b))
   }
 
-  // Individual baker outreach
-  async function sendBakerMessage(baker: any, message: string) {
-    await fetch('/api/email', {
+  async function approveBaker(baker: any) {
+    await supabase.from('bakers').update({ is_active: true, profile_complete: true }).eq('id', baker.id)
+    setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_active: true, profile_complete: true } : b))
+  }
+
+  async function rejectBaker(baker: any) {
+    await supabase.from('bakers').update({ is_suspended: true }).eq('id', baker.id)
+    setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_suspended: true } : b))
+  }
+
+  async function toggleCustomerSuspend(customer: any) {
+    const newVal = !customer.is_suspended
+    await supabase.from('customers').update({ is_suspended: newVal }).eq('id', customer.id)
+    setCustomers(customers.map(c => c.id === customer.id ? { ...c, is_suspended: newVal } : c))
+  }
+
+  async function flagOrder(order: any) {
+    const newVal = !order.is_flagged
+    await supabase.from('orders').update({ is_flagged: newVal }).eq('id', order.id)
+    setOrders(orders.map(o => o.id === order.id ? { ...o, is_flagged: newVal } : o))
+  }
+
+  async function resolveDispute(order: any) {
+    await supabase.from('orders').update({ is_disputed: false, is_flagged: false, status: 'complete' }).eq('id', order.id)
+    setOrders(orders.map(o => o.id === order.id ? { ...o, is_disputed: false, is_flagged: false, status: 'complete' } : o))
+  }
+
+  async function issueRefund(order: any) {
+    if (!confirm('Issue full refund for order ' + order.id.slice(0, 8) + '?')) return
+    const res = await fetch('/api/stripe/refund', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'announcement',
-        to: baker.email,
-        name: baker.business_name,
-        subject: 'A note from the Whiskly team',
-        body: message,
+      body: JSON.stringify({ order_id: order.id }),
+    })
+    const data = await res.json()
+    if (data.error) { alert('Refund error: ' + data.error); return }
+    alert('Refund issued successfully.')
+    setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'refunded' } : o))
+  }
+
+  function getFilteredOrders() {
+    return orders.filter(o => {
+      if (dateFrom && o.created_at < dateFrom) return false
+      if (dateTo && o.created_at > dateTo + 'T23:59:59') return false
+      return true
+    })
+  }
+
+  function downloadCSV() {
+    const filtered = getFilteredOrders()
+    const rows = [
+      ['Date', 'Order ID', 'Customer', 'Baker', 'Event Type', 'Total ($)', 'Commission ($)', 'Deposit Paid', 'Remainder Paid', 'Status'],
+      ...filtered.map(o => {
+        const total = o.amount_total ? (o.amount_total / 100).toFixed(2) : o.budget || 0
+        const commission = o.amount_total ? ((o.amount_total / 100) * (o.bakers?.is_pro ? 0.07 : 0.10)).toFixed(2) : ''
+        return [
+          new Date(o.created_at).toLocaleDateString(),
+          o.id.slice(0, 8),
+          o.customer_name,
+          o.bakers?.business_name || '',
+          o.event_type,
+          total,
+          commission,
+          o.deposit_paid_at ? 'Yes' : 'No',
+          o.remainder_paid_at ? 'Yes' : 'No',
+          o.status,
+        ]
       })
-    }).catch(() => {})
-    alert('Message sent to ' + baker.business_name + '!')
+    ]
+    const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'whiskly-transactions-' + new Date().toISOString().slice(0, 10) + '.csv'
+    a.click()
   }
 
-  // Campaign sending
-  async function sendCampaign() {
-    if (!emailSubject.trim() || !emailBody.trim()) return
-    setSendingEmail(true)
-
-    let recipients: any[] = []
-    if (emailAudience === 'bakers' || emailAudience === 'all') {
-      const { data } = await supabase.from('bakers').select('email, business_name').eq('is_active', true)
-      recipients = [...recipients, ...(data || []).map(b => ({ email: b.email, name: b.business_name }))]
-    }
-    if (emailAudience === 'customers' || emailAudience === 'all') {
-      const { data } = await supabase.from('customers').select('email, full_name')
-      recipients = [...recipients, ...(data || []).map(c => ({ email: c.email, name: c.full_name }))]
-    }
-
-    for (const r of recipients) {
-      await fetch('/api/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'announcement', to: r.email, name: r.name, subject: emailSubject, body: emailBody })
-      }).catch(() => {})
-    }
-
-    const newCampaign = {
-      id: Date.now().toString(),
-      subject: emailSubject,
-      audience: emailAudience,
-      recipients: recipients.length,
-      sent_at: new Date().toISOString(),
-      body: emailBody,
-    }
-    const updated = [newCampaign, ...campaigns]
-    setCampaigns(updated)
-    localStorage.setItem('whiskly-campaigns', JSON.stringify(updated))
-
-    setSendingEmail(false)
-    setEmailPreview(false)
-    setEmailSubject('')
-    setEmailBody('')
-    alert('Campaign sent to ' + recipients.length + ' recipients!')
-  }
-
-  // Caption generation
-  async function generateCaptions(baker: any) {
-    setGeneratingCaption(true)
-    setSelectedBaker(baker)
-    const metrics = getBakerMetrics(baker.id)
-
-    const prompt = `Generate social media captions to promote this baker on Whiskly marketplace.
-
-Baker: ${baker.business_name}
-Location: ${baker.city}, ${baker.state}
-Specialties: ${baker.specialties?.join(', ') || 'Custom cakes and baked goods'}
-Bio: ${baker.bio || 'Independent baker creating custom baked goods'}
-Rating: ${baker.avg_rating ? baker.avg_rating.toFixed(1) + '/5' : 'New baker'}
-Orders completed: ${metrics.completedOrders}
-${baker.is_pro ? 'Pro verified baker' : ''}
-
-Generate one caption for each platform: Instagram, TikTok, Facebook, Threads, Lemon8.
-Keep each caption authentic, not salesy. Focus on the human story and the craft.
-Include the baker profile link placeholder: [PROFILE_LINK]
-
-Format your response as JSON with keys: Instagram, TikTok, Facebook, Threads, Lemon8`
-
-    try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{ role: 'user', content: prompt }]
-        })
-      })
-      const data = await res.json()
-      const text = data.content?.[0]?.text || ''
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0])
-        const profileUrl = 'https://whiskly.vercel.app/bakers/' + baker.id
-        const withLinks: Record<string, string> = {}
-        for (const platform of PLATFORMS) {
-          withLinks[platform] = (parsed[platform] || '').replace('[PROFILE_LINK]', profileUrl)
-        }
-        setGeneratedCaptions(withLinks)
-      }
-    } catch (err) {
-      console.error('Caption generation error:', err)
-    }
-    setGeneratingCaption(false)
-  }
-
-  function copyCaption(platform: string) {
-    const caption = generatedCaptions[platform]
-    if (!caption) return
-    navigator.clipboard.writeText(caption)
-    setCopiedPlatform(platform)
-    setTimeout(() => setCopiedPlatform(''), 2000)
-  }
-
-  // Social log
-  function savePost() {
-    if (!newPost.baker_id || !newPost.caption) return
-    setSavingPost(true)
-    const baker = bakers.find(b => b.id === newPost.baker_id)
-    const post = {
-      id: Date.now().toString(),
-      ...newPost,
-      baker_name: baker?.business_name || '',
-      created_at: new Date().toISOString(),
-    }
-    const updated = [post, ...socialLog]
-    setSocialLog(updated)
-    localStorage.setItem('whiskly-social-log', JSON.stringify(updated))
-    setNewPost({ baker_id: '', platform: 'Instagram', caption: '', post_date: new Date().toISOString().slice(0, 10) })
-    setSavingPost(false)
-  }
-
-  function deletePost(id: string) {
-    const updated = socialLog.filter(p => p.id !== id)
-    setSocialLog(updated)
-    localStorage.setItem('whiskly-social-log', JSON.stringify(updated))
-  }
-
-  // Today's action items
-  const expiringSoon = featuredBakers.filter(b => {
-    const days = getDaysAsFeatured(b)
-    return days !== null && days >= 25
-  })
-  const neverFeatured = bakers.filter(b => !b.is_featured && !b.featured_since && b.is_active)
-  const noRecentPost = bakers.filter(b => {
-    const lastPost = socialLog.find(p => p.baker_id === b.id)
-    if (!lastPost) return true
-    const daysSince = Math.floor((Date.now() - new Date(lastPost.created_at).getTime()) / 86400000)
-    return daysSince > 30
-  }).slice(0, 3)
-
-  const SPECIALTIES = ['Wedding Cakes', 'Birthday Cakes', 'Custom Cookies', 'Cupcakes', 'Kids Party Cakes', 'Vegan/Gluten Free', 'Macarons', 'Cheesecakes']
-
-  const SEASONAL_CAMPAIGNS = [
-    { name: "Valentine's Day", date: 'Feb 14', daysUntil: Math.floor((new Date(new Date().getFullYear(), 1, 14).getTime() - Date.now()) / 86400000), emoji: '💝', tip: 'Feature bakers with heart-shaped cakes and romantic designs. Send campaign 3 weeks out.' },
-    { name: "Mother's Day", date: 'May 11', daysUntil: Math.floor((new Date(new Date().getFullYear(), 4, 11).getTime() - Date.now()) / 86400000), emoji: '🌸', tip: 'Highlight floral cakes and custom designs. Most orders placed 2 weeks before.' },
-    { name: 'Wedding Season', date: 'May–Oct', daysUntil: null, emoji: '💍', tip: 'Feature bakers with wedding cake portfolios. Run ongoing campaign May through October.' },
-    { name: 'Back to School', date: 'Aug–Sep', daysUntil: Math.floor((new Date(new Date().getFullYear(), 7, 15).getTime() - Date.now()) / 86400000), emoji: '🎒', tip: 'Push custom cookies and treats for teachers and school events.' },
-    { name: 'Halloween', date: 'Oct 31', daysUntil: Math.floor((new Date(new Date().getFullYear(), 9, 31).getTime() - Date.now()) / 86400000), emoji: '🎃', tip: 'Spooky custom cakes and cookies. Feature bakers with Halloween portfolio photos.' },
-    { name: 'Thanksgiving', date: 'Nov 27', daysUntil: Math.floor((new Date(new Date().getFullYear(), 10, 27).getTime() - Date.now()) / 86400000), emoji: '🍂', tip: 'Custom pies, cakes, and dessert boxes for family gatherings.' },
-    { name: 'Holiday Season', date: 'Dec 1–25', daysUntil: Math.floor((new Date(new Date().getFullYear(), 11, 1).getTime() - Date.now()) / 86400000), emoji: '🎄', tip: 'Biggest season of the year. Feature all Pro bakers. Run weekly campaigns in December.' },
-  ]
+  const totalGMV = orders.filter(o => o.deposit_paid_at).reduce((sum, o) => sum + (o.amount_total || (o.budget * 100) || 0), 0) / 100
+  const totalCommission = orders.filter(o => o.deposit_paid_at).reduce((sum, o) => {
+    const rate = o.bakers?.is_pro ? 0.07 : 0.10
+    return sum + ((o.amount_total || (o.budget * 100) || 0) / 100) * rate
+  }, 0)
+  const pendingOrders = orders.filter(o => o.status === 'pending').length
+  const disputedOrders = orders.filter(o => o.is_disputed || o.is_flagged)
+  const pendingApplications = bakers.filter(b => !b.is_active || !b.profile_complete)
+  const proCount = bakers.filter(b => b.is_pro).length
 
   if (!authed) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
         <div className="bg-white rounded-2xl p-8 shadow-sm w-full max-w-sm">
-          <h1 className="text-2xl font-bold mb-1" style={{ color: '#2d1a0e' }}>Marketing Portal</h1>
-          <p className="text-sm mb-6" style={{ color: '#5c3d2e' }}>Whiskly marketing team access</p>
+          <h1 className="text-2xl font-bold mb-1" style={{ color: '#2d1a0e' }}>Admin Panel</h1>
+          <p className="text-sm mb-6" style={{ color: '#5c3d2e' }}>Whiskly internal access only</p>
           <div className="relative mb-3">
-  <input
-    type={showPassword ? 'text' : 'password'}
-    value={password}
-    onChange={e => setPassword(e.target.value)}
-    onKeyDown={e => e.key === 'Enter' && handleAuth()}
-    placeholder="Enter marketing password"
-    className="w-full px-4 py-3 rounded-xl border text-sm"
-    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-  <button type="button" onClick={() => setShowPassword(!showPassword)}
-    className="absolute right-3 top-3 text-xs font-semibold"
-    style={{ color: '#5c3d2e' }}>
-    {showPassword ? 'Hide' : 'Show'}
-  </button>
-</div>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAuth()}
+              placeholder="Enter admin password"
+              className="w-full px-4 py-3 rounded-xl border text-sm"
+              style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-3 text-xs font-semibold"
+              style={{ color: '#5c3d2e' }}>
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {authError && <p className="text-xs mb-3" style={{ color: '#dc2626' }}>{authError}</p>}
+          <button onClick={handleAuth} className="w-full py-3 rounded-xl text-white font-semibold text-sm" style={{ backgroundColor: '#2d1a0e' }}>
+            Sign In
+          </button>
+          <p className="text-xs text-center mt-4" style={{ color: '#9c7b6b' }}>
+            To change your password, update NEXT_PUBLIC_ADMIN_PASSWORD in your{' '}
+            <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="underline">Vercel environment variables</a>.
+          </p>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
-      <nav className="bg-white shadow-sm px-6 py-4 flex items-center justify-between">
+      <nav className="bg-white shadow-sm px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/" className="text-lg font-bold" style={{ color: '#2d1a0e' }}>🎂 Whiskly</Link>
-          <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ backgroundColor: '#dbeafe', color: '#1e40af' }}>Marketing</span>
+          <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Admin</span>
         </div>
-        <div className="flex items-center gap-4 text-xs" style={{ color: '#5c3d2e' }}>
-          <span>{bakers.length} active bakers</span>
-          <span>{featuredBakers.length} featured</span>
-          <span>{campaigns.length} campaigns sent</span>
+        <div className="flex items-center gap-3">
+          {disputedOrders.length > 0 && (
+            <button onClick={() => setActiveTab('Disputes')}
+              className="text-xs px-3 py-1.5 rounded-full font-semibold cursor-pointer"
+              style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>
+              {disputedOrders.length} dispute{disputedOrders.length > 1 ? 's' : ''} — click to review
+            </button>
+          )}
+          {pendingApplications.length > 0 && (
+            <button onClick={() => setActiveTab('Applications')}
+              className="text-xs px-3 py-1.5 rounded-full font-semibold cursor-pointer"
+              style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>
+              {pendingApplications.length} application{pendingApplications.length > 1 ? 's' : ''} — click to review
+            </button>
+          )}
           <button onClick={() => setAuthed(false)} className="px-3 py-1.5 rounded-lg border text-xs font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Sign Out</button>
         </div>
       </nav>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-
-        {/* Tabs */}
         <div className="flex gap-2 mb-6 flex-wrap">
           {TABS.map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className="px-4 py-2 rounded-lg text-sm font-semibold relative"
               style={{ backgroundColor: activeTab === tab ? '#2d1a0e' : 'white', color: activeTab === tab ? 'white' : '#2d1a0e' }}>
               {tab}
-              {tab === 'Today' && (expiringSoon.length + neverFeatured.slice(0, 3).length) > 0 && (
-                <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#f59e0b', color: 'white' }}>
-                  {expiringSoon.length + Math.min(neverFeatured.length, 3)}
-                </span>
+              {tab === 'Disputes' && disputedOrders.length > 0 && (
+                <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#dc2626', color: 'white' }}>{disputedOrders.length}</span>
+              )}
+              {tab === 'Applications' && pendingApplications.length > 0 && (
+                <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#f59e0b', color: 'white' }}>{pendingApplications.length}</span>
               )}
             </button>
           ))}
@@ -339,707 +240,484 @@ Format your response as JSON with keys: Instagram, TikTok, Facebook, Threads, Le
 
         {loading && <p className="text-sm" style={{ color: '#5c3d2e' }}>Loading...</p>}
 
-        {/* TODAY */}
-        {activeTab === 'Today' && (
+        {activeTab === 'Overview' && (
           <div className="flex flex-col gap-6">
-
-            {/* Quick stats */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: 'Active Bakers', value: bakers.length },
-                { label: 'Featured', value: featuredBakers.length },
-                { label: 'Pro Bakers', value: bakers.filter(b => b.is_pro).length },
-                { label: 'Campaigns Sent', value: campaigns.length },
-                { label: 'Social Posts Logged', value: socialLog.length },
-              ].map(s => (
-                <div key={s.label} className="bg-white rounded-2xl p-4 shadow-sm text-center">
-                  <p className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>{s.value}</p>
-                  <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>{s.label}</p>
-                </div>
+                { label: 'Total GMV', value: '$' + totalGMV.toFixed(2), sub: 'all paid orders', tab: 'Accounting', color: '#2d1a0e' },
+                { label: 'Commission Earned', value: '$' + totalCommission.toFixed(2), sub: '10% / 7% Pro', tab: 'Accounting', color: '#2d1a0e' },
+                { label: 'Pro Bakers', value: proCount + ' / ' + bakers.length, sub: 'click to manage bakers', tab: 'Bakers', color: '#8B4513' },
+                { label: 'Pending Orders', value: pendingOrders, sub: 'click to view orders', tab: 'Orders', color: pendingOrders > 0 ? '#854d0e' : '#2d1a0e' },
+              ].map(stat => (
+                <button key={stat.label} onClick={() => setActiveTab(stat.tab)}
+                  className="bg-white rounded-2xl p-5 shadow-sm text-left hover:shadow-md transition-shadow group">
+                  <p className="text-xs font-semibold mb-1" style={{ color: '#5c3d2e' }}>{stat.label}</p>
+                  <p className="text-2xl font-bold" style={{ color: stat.color }}>{stat.value}</p>
+                  <p className="text-xs mt-1 group-hover:underline" style={{ color: '#9c7b6b' }}>{stat.sub} →</p>
+                </button>
               ))}
             </div>
 
-            {/* Action items */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Today's Action Items</h2>
-
-              {expiringSoon.length === 0 && neverFeatured.length === 0 && noRecentPost.length === 0 ? (
-                <div className="text-center py-8 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
-                  <p className="text-2xl mb-2">✓</p>
-                  <p className="font-semibold" style={{ color: '#2d1a0e' }}>All caught up!</p>
-                  <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>No urgent marketing tasks right now.</p>
-                </div>
-              ) : (
+            {(disputedOrders.length > 0 || pendingApplications.length > 0) && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm">
+                <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Needs Attention</h2>
                 <div className="flex flex-col gap-3">
-                  {expiringSoon.map(baker => (
+                  {pendingApplications.map(baker => (
                     <div key={baker.id} className="flex items-center justify-between p-4 rounded-xl border-l-4 gap-4"
-                      style={{ backgroundColor: '#fef2f2', borderColor: '#dc2626' }}>
-                      <div>
-                        <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>Featured baker expiring soon — {baker.business_name}</p>
-                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Featured for {getDaysAsFeatured(baker)} days — 30 day limit approaching. Rotate or extend.</p>
+                      style={{ backgroundColor: '#fffbeb', borderColor: '#f59e0b' }}>
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
+                          {baker.profile_photo_url
+                            ? <img src={baker.profile_photo_url} alt="" className="w-full h-full object-cover" />
+                            : <span className="font-bold text-sm" style={{ color: '#2d1a0e' }}>{baker.business_name?.[0]}</span>}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>Baker Application — {baker.business_name}</p>
+                          <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state} · {baker.email}</p>
+                          {baker.specialties?.length > 0 && <p className="text-xs mt-0.5" style={{ color: '#8B4513' }}>{baker.specialties.slice(0, 3).join(', ')}</p>}
+                        </div>
                       </div>
                       <div className="flex gap-2 flex-shrink-0">
-                        <button onClick={() => unfeatureBaker(baker)}
+                        <Link href={'/bakers/' + baker.id} target="_blank"
                           className="px-3 py-2 rounded-lg text-xs font-semibold border"
-                          style={{ borderColor: '#dc2626', color: '#dc2626' }}>
-                          Remove
+                          style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+                          View Profile
+                        </Link>
+                        <button onClick={() => approveBaker(baker)}
+                          className="px-4 py-2 rounded-lg text-xs font-bold text-white"
+                          style={{ backgroundColor: '#166534' }}>
+                          Approve
                         </button>
-                        <button onClick={() => featureBaker(baker)}
-                          className="px-3 py-2 rounded-lg text-xs font-semibold text-white"
-                          style={{ backgroundColor: '#2d1a0e' }}>
-                          Reset Timer
+                        <button onClick={() => rejectBaker(baker)}
+                          className="px-4 py-2 rounded-lg text-xs font-bold border"
+                          style={{ borderColor: '#dc2626', color: '#dc2626' }}>
+                          Reject
                         </button>
                       </div>
                     </div>
                   ))}
-
-                  {neverFeatured.slice(0, 3).map(baker => {
-                    const metrics = getBakerMetrics(baker.id)
-                    return (
-                      <div key={baker.id} className="flex items-center justify-between p-4 rounded-xl border-l-4 gap-4"
-                        style={{ backgroundColor: '#fffbeb', borderColor: '#f59e0b' }}>
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0" style={{ backgroundColor: '#f5f0eb' }}>
-                            {baker.profile_photo_url
-                              ? <img src={baker.profile_photo_url} alt="" className="w-full h-full object-cover" />
-                              : <div className="w-full h-full flex items-center justify-center font-bold text-sm" style={{ color: '#2d1a0e' }}>{baker.business_name?.[0]}</div>}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>Never featured — {baker.business_name}</p>
-                            <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state} · {metrics.completedOrders} orders · {baker.avg_rating ? '★ ' + baker.avg_rating.toFixed(1) : 'No rating yet'}</p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2 flex-shrink-0">
-                          <button onClick={() => { setSelectedBaker(baker); setActiveTab('Content Hub') }}
-                            className="px-3 py-2 rounded-lg text-xs font-semibold border"
-                            style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
-                            Create Content
-                          </button>
-                          <button onClick={() => featureBaker(baker)}
-                            className="px-3 py-2 rounded-lg text-xs font-semibold text-white"
-                            style={{ backgroundColor: '#f59e0b' }}>
-                            Feature
-                          </button>
-                        </div>
+                  {disputedOrders.map(order => (
+                    <div key={order.id} className="flex items-center justify-between p-4 rounded-xl border-l-4 gap-4"
+                      style={{ backgroundColor: '#fef2f2', borderColor: '#dc2626' }}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>Dispute — {order.customer_name} vs {order.bakers?.business_name}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{order.event_type} · {order.event_date} · ${order.budget} · Order {order.id.slice(0, 8)}</p>
                       </div>
-                    )
-                  })}
-
-                  {noRecentPost.map(baker => (
-                    <div key={baker.id} className="flex items-center justify-between p-4 rounded-xl border-l-4 gap-4"
-                      style={{ backgroundColor: '#f5f0eb', borderColor: '#e0d5cc' }}>
-                      <div>
-                        <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>No recent social post — {baker.business_name}</p>
-                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Hasn't been posted about in 30+ days. Consider creating content.</p>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => resolveDispute(order)}
+                          className="px-4 py-2 rounded-lg text-xs font-bold text-white"
+                          style={{ backgroundColor: '#166534' }}>
+                          Resolve
+                        </button>
+                        {order.deposit_paid_at && (
+                          <button onClick={() => issueRefund(order)}
+                            className="px-4 py-2 rounded-lg text-xs font-bold border"
+                            style={{ borderColor: '#dc2626', color: '#dc2626' }}>
+                            Refund
+                          </button>
+                        )}
                       </div>
-                      <button onClick={() => { setSelectedBaker(baker); setActiveTab('Content Hub') }}
-                        className="flex-shrink-0 px-3 py-2 rounded-lg text-xs font-semibold border"
-                        style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
-                        Create Content
-                      </button>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* Top performers */}
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Top Performers This Month</h2>
-                <p className="text-xs" style={{ color: '#5c3d2e' }}>Great candidates to feature and promote</p>
+                <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Recent Orders</h2>
+                <button onClick={() => setActiveTab('Orders')} className="text-xs font-semibold underline" style={{ color: '#8B4513' }}>
+                  View all orders →
+                </button>
               </div>
-              <div className="flex flex-col gap-3">
-                {topPerformers.map((baker, i) => (
-                  <div key={baker.id} className="flex items-center justify-between p-4 rounded-xl"
-                    style={{ backgroundColor: i === 0 ? '#fffbeb' : '#faf8f6' }}>
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <span className="text-lg font-bold flex-shrink-0" style={{ color: i === 0 ? '#f59e0b' : '#e0d5cc' }}>#{i + 1}</span>
-                      <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0" style={{ backgroundColor: '#f5f0eb' }}>
-                        {baker.profile_photo_url
-                          ? <img src={baker.profile_photo_url} alt="" className="w-full h-full object-cover" />
-                          : <div className="w-full h-full flex items-center justify-center font-bold text-sm" style={{ color: '#2d1a0e' }}>{baker.business_name?.[0]}</div>}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>{baker.business_name}</p>
-                          {baker.is_pro && <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#2d1a0e', color: 'white' }}>Pro</span>}
-                          {baker.is_featured && <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#f59e0b', color: 'white' }}>★ Featured</span>}
-                        </div>
-                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
-                          {baker.city}, {baker.state} · {baker.completedOrders} orders · ${baker.revenue.toFixed(0)} revenue
-                          {baker.avg_rating ? ' · ★ ' + baker.avg_rating.toFixed(1) : ''}
-                        </p>
-                      </div>
+              <div className="flex flex-col gap-2">
+                {orders.slice(0, 8).map(order => (
+                  <div key={order.id} className="flex items-center justify-between p-3 rounded-xl"
+                    style={{ backgroundColor: order.is_flagged ? '#fff7ed' : order.is_disputed ? '#fef2f2' : '#faf8f6' }}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{order.customer_name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{order.event_type} · {order.bakers?.business_name} · ${order.budget}</p>
                     </div>
-                    <div className="flex gap-2 flex-shrink-0">
-                      <button onClick={() => { setSelectedBaker(baker); setActiveTab('Content Hub') }}
-                        className="px-3 py-2 rounded-lg text-xs font-semibold border"
-                        style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
-                        Create Content
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <span className="text-xs" style={{ color: '#9c7b6b' }}>{new Date(order.created_at).toLocaleDateString()}</span>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{
+                        backgroundColor: order.status === 'complete' ? '#dcfce7' : order.status === 'pending' ? '#fef9c3' : order.status === 'declined' ? '#fee2e2' : '#dbeafe',
+                        color: order.status === 'complete' ? '#166534' : order.status === 'pending' ? '#854d0e' : order.status === 'declined' ? '#991b1b' : '#1e40af'
+                      }}>{order.status}</span>
+                      <button onClick={() => flagOrder(order)}
+                        className="px-2 py-1 rounded text-xs font-semibold border"
+                        style={{ borderColor: order.is_flagged ? '#f59e0b' : '#e0d5cc', color: order.is_flagged ? '#92400e' : '#9c7b6b', backgroundColor: order.is_flagged ? '#fef9c3' : 'transparent' }}>
+                        {order.is_flagged ? '⚑ Flagged' : 'Flag'}
                       </button>
-                      {!baker.is_featured ? (
-                        <button onClick={() => featureBaker(baker)}
-                          className="px-3 py-2 rounded-lg text-xs font-semibold text-white"
-                          style={{ backgroundColor: '#8B4513' }}>
-                          Feature
-                        </button>
-                      ) : (
-                        <button onClick={() => unfeatureBaker(baker)}
-                          className="px-3 py-2 rounded-lg text-xs font-semibold border"
-                          style={{ borderColor: '#dc2626', color: '#dc2626' }}>
-                          Unfeature
-                        </button>
-                      )}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-          </div>
-        )}
-
-        {/* FEATURED */}
-        {activeTab === 'Featured' && (
-          <div className="flex flex-col gap-6">
-            {featuredBakers.length > 0 && (
-              <div className="bg-white rounded-2xl p-6 shadow-sm">
-                <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Currently Featured ({featuredBakers.length})</h2>
-                <div className="flex flex-col gap-3">
-                  {featuredBakers.map(baker => {
-                    const days = getDaysAsFeatured(baker)
-                    const expiring = days !== null && days >= 25
-                    return (
-                      <div key={baker.id} className="flex items-center justify-between p-4 rounded-xl border"
-                        style={{ borderColor: expiring ? '#f59e0b' : '#e0d5cc', backgroundColor: expiring ? '#fffbeb' : 'white' }}>
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0" style={{ backgroundColor: '#f5f0eb' }}>
-                            {baker.profile_photo_url
-                              ? <img src={baker.profile_photo_url} alt="" className="w-full h-full object-cover" />
-                              : <div className="w-full h-full flex items-center justify-center font-bold" style={{ color: '#2d1a0e' }}>{baker.business_name?.[0]}</div>}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>{baker.business_name}</p>
-                            <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state}</p>
-                            {days !== null && (
-                              <p className="text-xs mt-0.5 font-semibold" style={{ color: expiring ? '#c2410c' : '#5c3d2e' }}>
-                                {expiring ? '⚠ ' : ''}Featured for {days} day{days !== 1 ? 's' : ''} {expiring ? '— consider rotating' : ''}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex gap-2 flex-shrink-0">
-                          <Link href={'/bakers/' + baker.id} target="_blank"
-                            className="px-3 py-2 rounded-lg text-xs font-semibold border"
-                            style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
-                            View Profile
-                          </Link>
-                          <button onClick={() => featureBaker(baker)}
-                            className="px-3 py-2 rounded-lg text-xs font-semibold border"
-                            style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
-                            Reset Timer
-                          </button>
-                          <button onClick={() => unfeatureBaker(baker)}
-                            className="px-3 py-2 rounded-lg text-xs font-semibold border"
-                            style={{ borderColor: '#dc2626', color: '#dc2626' }}>
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>All Active Bakers</h2>
-                <input value={bakerSearch} onChange={e => setBakerSearch(e.target.value)}
-                  placeholder="Search..."
-                  className="px-3 py-2 rounded-lg border text-sm"
-                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-              </div>
-              <div className="flex flex-col gap-2">
-                {unfeaturedBakers
-                  .filter(b => !bakerSearch || b.business_name?.toLowerCase().includes(bakerSearch.toLowerCase()))
-                  .map(baker => {
-                    const metrics = getBakerMetrics(baker.id)
-                    return (
-                      <div key={baker.id} className="flex items-center justify-between p-3 rounded-xl"
-                        style={{ backgroundColor: '#faf8f6' }}>
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0" style={{ backgroundColor: '#f5f0eb' }}>
-                            {baker.profile_photo_url
-                              ? <img src={baker.profile_photo_url} alt="" className="w-full h-full object-cover" />
-                              : <div className="w-full h-full flex items-center justify-center font-bold text-xs" style={{ color: '#2d1a0e' }}>{baker.business_name?.[0]}</div>}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{baker.business_name}</p>
-                              {baker.is_pro && <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#2d1a0e', color: 'white' }}>Pro</span>}
-                            </div>
-                            <p className="text-xs" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state} · {metrics.completedOrders} orders{baker.avg_rating ? ' · ★ ' + baker.avg_rating.toFixed(1) : ''}</p>
-                          </div>
-                        </div>
-                        <button onClick={() => featureBaker(baker)}
-                          className="flex-shrink-0 px-3 py-2 rounded-lg text-xs font-semibold"
-                          style={{ backgroundColor: '#f59e0b', color: 'white' }}>
-                          ★ Feature
-                        </button>
-                      </div>
-                    )
-                  })}
+              <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Platform Stats</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {[
+                  { label: 'Total Bakers', value: bakers.length, tab: 'Bakers' },
+                  { label: 'Active Bakers', value: bakers.filter(b => b.is_active).length, tab: 'Bakers' },
+                  { label: 'Total Customers', value: customers.length, tab: 'Customers' },
+                  { label: 'Total Orders', value: orders.length, tab: 'Orders' },
+                  { label: 'Completed Orders', value: orders.filter(o => o.status === 'complete').length, tab: 'Orders' },
+                  { label: 'Suspended Accounts', value: bakers.filter(b => b.is_suspended).length + customers.filter(c => c.is_suspended).length, tab: 'Bakers' },
+                ].map(stat => (
+                  <button key={stat.label} onClick={() => setActiveTab(stat.tab)}
+                    className="p-4 rounded-xl text-left hover:shadow-sm transition-shadow"
+                    style={{ backgroundColor: '#f5f0eb' }}>
+                    <p className="text-xs font-semibold mb-1" style={{ color: '#5c3d2e' }}>{stat.label}</p>
+                    <p className="text-xl font-bold" style={{ color: '#2d1a0e' }}>{stat.value}</p>
+                    <p className="text-xs mt-1" style={{ color: '#9c7b6b' }}>click to view →</p>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
         )}
 
-        {/* DIRECTORY */}
-        {activeTab === 'Directory' && (
+        {activeTab === 'Orders' && (
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-3 mb-4 flex-wrap">
-              <input value={directorySearch} onChange={e => setDirectorySearch(e.target.value)}
-                placeholder="Search by name, city..."
+              <input value={orderSearch} onChange={e => setOrderSearch(e.target.value)}
+                placeholder="Search by customer, baker, event..."
                 className="px-3 py-2 rounded-lg border text-sm flex-1 min-w-48"
                 style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-              <select value={directorySpecialty} onChange={e => setDirectorySpecialty(e.target.value)}
+              <select value={orderStatusFilter} onChange={e => setOrderStatusFilter(e.target.value)}
                 className="px-3 py-2 rounded-lg border text-sm"
                 style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
-                <option value="">All Specialties</option>
-                {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <select value={directoryFilter} onChange={e => setDirectoryFilter(e.target.value)}
-                className="px-3 py-2 rounded-lg border text-sm"
-                style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
-                <option value="all">All Bakers</option>
-                <option value="pro">Pro Only</option>
-                <option value="featured">Featured</option>
-                <option value="top">Top Rated</option>
-                <option value="new">Newest</option>
+                <option value="all">All Statuses</option>
+                {['pending','confirmed','in_progress','ready','complete','declined','refunded'].map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
               </select>
             </div>
-
-            <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>
-              {bakers.filter(b => {
-                const q = directorySearch.toLowerCase()
-                const matchSearch = !q || b.business_name?.toLowerCase().includes(q) || b.city?.toLowerCase().includes(q)
-                const matchSpecialty = !directorySpecialty || b.specialties?.includes(directorySpecialty)
-                const matchFilter = directoryFilter === 'all' || (directoryFilter === 'pro' && b.is_pro) || (directoryFilter === 'featured' && b.is_featured) || (directoryFilter === 'top' && b.avg_rating >= 4) || directoryFilter === 'new'
-                return matchSearch && matchSpecialty && matchFilter
-              }).length} bakers shown
-            </p>
-
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr style={{ borderBottom: '1px solid #e0d5cc' }}>
-                    {['Baker', 'Location', 'Specialties', 'Rating', 'Orders', 'Status', 'Actions'].map(h => (
+                    {['Date','Order ID','Customer','Baker','Event','Budget','Deposit','Status','Actions'].map(h => (
                       <th key={h} className="text-left py-2 px-3 font-semibold" style={{ color: '#5c3d2e' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {bakers
-                    .filter(b => {
-                      const q = directorySearch.toLowerCase()
-                      const matchSearch = !q || b.business_name?.toLowerCase().includes(q) || b.city?.toLowerCase().includes(q)
-                      const matchSpecialty = !directorySpecialty || b.specialties?.includes(directorySpecialty)
-                      const matchFilter = directoryFilter === 'all' || (directoryFilter === 'pro' && b.is_pro) || (directoryFilter === 'featured' && b.is_featured) || (directoryFilter === 'top' && b.avg_rating >= 4) || directoryFilter === 'new'
-                      return matchSearch && matchSpecialty && matchFilter
-                    })
-                    .map(baker => {
-                      const metrics = getBakerMetrics(baker.id)
-                      return (
-                        <tr key={baker.id} className="border-b" style={{ borderColor: '#f5f0eb' }}>
-                          <td className="py-2.5 px-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0" style={{ backgroundColor: '#f5f0eb' }}>
-                                {baker.profile_photo_url
-                                  ? <img src={baker.profile_photo_url} alt="" className="w-full h-full object-cover" />
-                                  : <div className="w-full h-full flex items-center justify-center font-bold" style={{ color: '#2d1a0e', fontSize: '10px' }}>{baker.business_name?.[0]}</div>}
-                              </div>
-                              <div>
-                                <p className="font-semibold" style={{ color: '#2d1a0e' }}>{baker.business_name}</p>
-                                <p style={{ color: '#9c7b6b' }}>{baker.email}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state}</td>
-                          <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{baker.specialties?.slice(0, 2).join(', ') || '—'}</td>
-                          <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>{baker.avg_rating ? '★ ' + baker.avg_rating.toFixed(1) : '—'}</td>
-                          <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>{metrics.completedOrders}</td>
-                          <td className="py-2.5 px-3">
-                            <div className="flex gap-1 flex-wrap">
-                              {baker.is_pro && <span className="px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#2d1a0e', color: 'white' }}>Pro</span>}
-                              {baker.is_featured && <span className="px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#f59e0b', color: 'white' }}>★</span>}
-                              {baker.is_founding_baker && <span className="px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#8B4513', color: 'white' }}>Founding</span>}
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <div className="flex gap-1.5">
-                              <Link href={'/bakers/' + baker.id} target="_blank"
-                                className="px-2 py-1 rounded text-xs font-semibold border"
-                                style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
-                                View
-                              </Link>
-                              <button onClick={() => { setSelectedBaker(baker); setActiveTab('Content Hub') }}
-                                className="px-2 py-1 rounded text-xs font-semibold border"
-                                style={{ borderColor: '#8B4513', color: '#8B4513' }}>
-                                Content
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
+                  {orders.filter(o => {
+                    const q = orderSearch.toLowerCase()
+                    const matchSearch = !q || o.customer_name?.toLowerCase().includes(q) || o.bakers?.business_name?.toLowerCase().includes(q) || o.event_type?.toLowerCase().includes(q)
+                    const matchStatus = orderStatusFilter === 'all' || o.status === orderStatusFilter
+                    return matchSearch && matchStatus
+                  }).map(order => (
+                    <tr key={order.id} className="border-b" style={{ borderColor: '#f5f0eb', backgroundColor: order.is_flagged ? '#fff7ed' : order.is_disputed ? '#fef2f2' : 'transparent' }}>
+                      <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{new Date(order.created_at).toLocaleDateString()}</td>
+                      <td className="py-2.5 px-3 font-mono" style={{ color: '#2d1a0e' }}>{order.id.slice(0, 8)}</td>
+                      <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>{order.customer_name}</td>
+                      <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>{order.bakers?.business_name}</td>
+                      <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>{order.event_type}</td>
+                      <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>${order.budget}</td>
+                      <td className="py-2.5 px-3"><span style={{ color: order.deposit_paid_at ? '#166534' : '#854d0e' }}>{order.deposit_paid_at ? '✓ Paid' : 'Unpaid'}</span></td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded-full" style={{
+                          backgroundColor: order.status === 'complete' ? '#dcfce7' : order.status === 'pending' ? '#fef9c3' : order.status === 'declined' ? '#fee2e2' : '#dbeafe',
+                          color: order.status === 'complete' ? '#166534' : order.status === 'pending' ? '#854d0e' : order.status === 'declined' ? '#991b1b' : '#1e40af'
+                        }}>{order.status}</span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <div className="flex gap-1.5 flex-wrap">
+                          <button onClick={() => flagOrder(order)}
+                            className="px-2 py-1 rounded text-xs font-semibold border"
+                            style={{ borderColor: order.is_flagged ? '#f59e0b' : '#e0d5cc', color: order.is_flagged ? '#92400e' : '#5c3d2e', backgroundColor: order.is_flagged ? '#fef9c3' : 'transparent' }}>
+                            {order.is_flagged ? 'Unflag' : 'Flag'}
+                          </button>
+                          {order.deposit_paid_at && (
+                            <button onClick={() => issueRefund(order)}
+                              className="px-2 py-1 rounded text-xs font-semibold border"
+                              style={{ borderColor: '#dc2626', color: '#dc2626' }}>
+                              Refund
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           </div>
         )}
 
-        {/* CAMPAIGNS */}
-        {activeTab === 'Campaigns' && (
-          <div className="flex flex-col gap-6">
-            <div className="bg-white rounded-2xl p-6 shadow-sm max-w-2xl">
-              <h2 className="text-lg font-bold mb-1" style={{ color: '#2d1a0e' }}>Send Announcement</h2>
-              <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>Send a platform-wide email to bakers, customers, or everyone.</p>
-
-              <div className="flex flex-col gap-4">
-                <div>
-                  <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Audience</label>
-                  <div className="flex gap-3">
-                    {[['all', 'Everyone'], ['bakers', 'Bakers only'], ['customers', 'Customers only']].map(([val, label]) => (
-                      <button key={val} onClick={() => setEmailAudience(val as any)}
-                        className="px-4 py-2 rounded-lg text-sm font-semibold border"
-                        style={{ backgroundColor: emailAudience === val ? '#2d1a0e' : 'white', color: emailAudience === val ? 'white' : '#2d1a0e', borderColor: emailAudience === val ? '#2d1a0e' : '#e0d5cc' }}>
-                        {label}
-                      </button>
+        {activeTab === 'Bakers' && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <input value={bakerSearch} onChange={e => setBakerSearch(e.target.value)}
+              placeholder="Search bakers..."
+              className="px-3 py-2 rounded-lg border text-sm mb-4 w-full max-w-sm"
+              style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e0d5cc' }}>
+                    {['Baker','Location','Joined','Orders','Pro','Featured','Stripe','Status','Actions'].map(h => (
+                      <th key={h} className="text-left py-2 px-3 font-semibold" style={{ color: '#5c3d2e' }}>{h}</th>
                     ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Subject Line</label>
-                  <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
-                    placeholder="e.g. Exciting news from Whiskly!"
-                    className="w-full px-4 py-3 rounded-xl border text-sm"
-                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Message</label>
-                  <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)}
-                    rows={6} placeholder="Write your announcement here..."
-                    className="w-full px-4 py-3 rounded-xl border text-sm resize-none"
-                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-                </div>
-
-                <div className="flex gap-3">
-                  <button onClick={() => setEmailPreview(!emailPreview)}
-                    className="flex-1 py-3 rounded-xl border text-sm font-semibold"
-                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }}>
-                    {emailPreview ? 'Hide Preview' : 'Preview'}
-                  </button>
-                  <button onClick={sendCampaign} disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
-                    className="flex-1 py-3 rounded-xl text-white font-semibold text-sm"
-                    style={{ backgroundColor: '#2d1a0e', opacity: (sendingEmail || !emailSubject.trim() || !emailBody.trim()) ? 0.6 : 1 }}>
-                    {sendingEmail ? 'Sending...' : 'Send Campaign'}
-                  </button>
-                </div>
-
-                {emailPreview && emailSubject && emailBody && (
-                  <div className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
-                    <p className="text-xs font-semibold mb-1" style={{ color: '#5c3d2e' }}>Preview</p>
-                    <p className="text-sm font-bold mb-2" style={{ color: '#2d1a0e' }}>{emailSubject}</p>
-                    <p className="text-sm whitespace-pre-line" style={{ color: '#5c3d2e' }}>{emailBody}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Campaign history */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Campaign History ({campaigns.length})</h2>
-              {campaigns.length === 0 ? (
-                <p className="text-sm" style={{ color: '#5c3d2e' }}>No campaigns sent yet.</p>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {campaigns.map(c => (
-                    <div key={c.id} className="flex items-start justify-between p-4 rounded-xl" style={{ backgroundColor: '#faf8f6' }}>
-                      <div>
-                        <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>{c.subject}</p>
-                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
-                          {new Date(c.sent_at).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })} · {c.recipients} recipients · {c.audience === 'all' ? 'Everyone' : c.audience}
-                        </p>
-                      </div>
-                      <span className="text-xs px-2 py-1 rounded-full font-semibold flex-shrink-0" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>Sent</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {bakers.filter(b => !bakerSearch || b.business_name?.toLowerCase().includes(bakerSearch.toLowerCase()) || b.email?.toLowerCase().includes(bakerSearch.toLowerCase())).map(baker => {
+                    const bakerOrders = orders.filter(o => o.baker_id === baker.id)
+                    return (
+                      <tr key={baker.id} className="border-b" style={{ borderColor: '#f5f0eb', backgroundColor: baker.is_suspended ? '#fef2f2' : 'transparent' }}>
+                        <td className="py-2.5 px-3">
+                          <p className="font-semibold" style={{ color: '#2d1a0e' }}>{baker.business_name}</p>
+                          <p style={{ color: '#5c3d2e' }}>{baker.email}</p>
+                        </td>
+                        <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state}</td>
+                        <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{new Date(baker.created_at).toLocaleDateString()}</td>
+                        <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>{bakerOrders.length}</td>
+                        <td className="py-2.5 px-3">
+                          <button onClick={() => toggleBakerPro(baker)}
+                            className="px-2 py-1 rounded text-xs font-semibold"
+                            style={{ backgroundColor: baker.is_pro ? '#2d1a0e' : '#f5f0eb', color: baker.is_pro ? 'white' : '#2d1a0e' }}>
+                            {baker.is_pro ? 'Pro' : 'Free'}
+                          </button>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <button onClick={() => toggleFeatured(baker)}
+                            className="px-2 py-1 rounded text-xs font-semibold"
+                            style={{ backgroundColor: baker.is_featured ? '#f59e0b' : '#f5f0eb', color: baker.is_featured ? 'white' : '#2d1a0e' }}>
+                            {baker.is_featured ? '★ Yes' : 'No'}
+                          </button>
+                        </td>
+                        <td className="py-2.5 px-3"><span style={{ color: baker.stripe_account_id ? '#166534' : '#854d0e' }}>{baker.stripe_account_id ? '✓ Connected' : 'Not connected'}</span></td>
+                        <td className="py-2.5 px-3">
+                          <span className="px-2 py-0.5 rounded-full" style={{
+                            backgroundColor: baker.is_suspended ? '#fee2e2' : baker.is_active ? '#dcfce7' : '#fef9c3',
+                            color: baker.is_suspended ? '#991b1b' : baker.is_active ? '#166534' : '#854d0e'
+                          }}>
+                            {baker.is_suspended ? 'Suspended' : baker.is_active ? 'Active' : 'Pending'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <div className="flex gap-1.5 flex-wrap">
+                            <button onClick={() => toggleBakerSuspend(baker)}
+                              className="px-2 py-1 rounded text-xs font-semibold border"
+                              style={{ borderColor: baker.is_suspended ? '#166534' : '#dc2626', color: baker.is_suspended ? '#166534' : '#dc2626' }}>
+                              {baker.is_suspended ? 'Unsuspend' : 'Suspend'}
+                            </button>
+                            <button onClick={() => toggleFoundingBaker(baker)}
+                              className="px-2 py-1 rounded text-xs font-semibold border"
+                              style={{ borderColor: '#8B4513', color: '#8B4513', backgroundColor: baker.is_founding_baker ? '#fff7ed' : 'transparent' }}>
+                              {baker.is_founding_baker ? '✓ Founding' : 'Founding'}
+                            </button>
+                            <Link href={'/bakers/' + baker.id} target="_blank"
+                              className="px-2 py-1 rounded text-xs font-semibold border"
+                              style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+                              View
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
 
-        {/* CONTENT HUB */}
-        {activeTab === 'Content Hub' && (
-          <div className="flex flex-col gap-6">
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold mb-1" style={{ color: '#2d1a0e' }}>Content Hub</h2>
-              <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>Select a baker to generate social captions and grab their assets for reposting.</p>
+        {activeTab === 'Customers' && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <input value={customerSearch} onChange={e => setCustomerSearch(e.target.value)}
+              placeholder="Search customers..."
+              className="px-3 py-2 rounded-lg border text-sm mb-4 w-full max-w-sm"
+              style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e0d5cc' }}>
+                    {['Name','Email','Location','Joined','Orders','Status','Actions'].map(h => (
+                      <th key={h} className="text-left py-2 px-3 font-semibold" style={{ color: '#5c3d2e' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.filter(c => !customerSearch || c.full_name?.toLowerCase().includes(customerSearch.toLowerCase()) || c.email?.toLowerCase().includes(customerSearch.toLowerCase())).map(customer => {
+                    const customerOrders = orders.filter(o => o.customer_email === customer.email)
+                    return (
+                      <tr key={customer.id} className="border-b" style={{ borderColor: '#f5f0eb', backgroundColor: customer.is_suspended ? '#fef2f2' : 'transparent' }}>
+                        <td className="py-2.5 px-3 font-semibold" style={{ color: '#2d1a0e' }}>{customer.full_name}</td>
+                        <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{customer.email}</td>
+                        <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{customer.city}, {customer.state}</td>
+                        <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{new Date(customer.created_at).toLocaleDateString()}</td>
+                        <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>{customerOrders.length}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="px-2 py-0.5 rounded-full" style={{ backgroundColor: customer.is_suspended ? '#fee2e2' : '#dcfce7', color: customer.is_suspended ? '#991b1b' : '#166534' }}>
+                            {customer.is_suspended ? 'Suspended' : 'Active'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <button onClick={() => toggleCustomerSuspend(customer)}
+                            className="px-2 py-1 rounded text-xs font-semibold border"
+                            style={{ borderColor: customer.is_suspended ? '#166634' : '#dc2626', color: customer.is_suspended ? '#166634' : '#dc2626' }}>
+                            {customer.is_suspended ? 'Unsuspend' : 'Suspend'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
-              {/* Baker selector */}
-              <div className="mb-5">
-                <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Select Baker</label>
-                <select
-                  value={selectedBaker?.id || ''}
-                  onChange={e => setSelectedBaker(bakers.find(b => b.id === e.target.value) || null)}
-                  className="w-full max-w-sm px-4 py-3 rounded-xl border text-sm"
-                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
-                  <option value="">Choose a baker...</option>
-                  {bakers.map(b => <option key={b.id} value={b.id}>{b.business_name} — {b.city}, {b.state}</option>)}
-                </select>
+        {activeTab === 'Disputes' && (
+          <div className="flex flex-col gap-4">
+            {disputedOrders.length === 0 ? (
+              <div className="bg-white rounded-2xl p-12 shadow-sm text-center">
+                <p className="text-2xl mb-2">✓</p>
+                <p className="font-semibold" style={{ color: '#2d1a0e' }}>No active disputes</p>
+                <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>All orders are in good standing.</p>
               </div>
-
-              {selectedBaker && (
-                <div className="flex flex-col gap-5">
-                  {/* Baker info */}
-                  <div className="flex items-center gap-4 p-4 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
-                    <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0" style={{ backgroundColor: '#e0d5cc' }}>
-                      {selectedBaker.profile_photo_url
-                        ? <img src={selectedBaker.profile_photo_url} alt="" className="w-full h-full object-cover" />
-                        : <div className="w-full h-full flex items-center justify-center font-bold text-lg" style={{ color: '#2d1a0e' }}>{selectedBaker.business_name?.[0]}</div>}
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-bold" style={{ color: '#2d1a0e' }}>{selectedBaker.business_name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{selectedBaker.city}, {selectedBaker.state} · {selectedBaker.specialties?.join(', ')}</p>
-                      {selectedBaker.avg_rating && <p className="text-xs mt-0.5" style={{ color: '#8B4513' }}>★ {selectedBaker.avg_rating.toFixed(1)} · {selectedBaker.review_count} reviews</p>}
-                    </div>
-                    <div className="flex gap-2">
-                      <Link href={'/bakers/' + selectedBaker.id} target="_blank"
-                        className="px-3 py-2 rounded-lg text-xs font-semibold border"
-                        style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
-                        View Profile
-                      </Link>
-                      <button
-                        onClick={() => navigator.clipboard.writeText('https://whiskly.vercel.app/bakers/' + selectedBaker.id)}
-                        className="px-3 py-2 rounded-lg text-xs font-semibold border"
-                        style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
-                        Copy Link
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Portfolio assets */}
-                  {selectedBaker.profile_photo_url && (
-                    <div>
-                      <p className="text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Profile Photo</p>
-                      <div className="flex gap-3 flex-wrap">
-                        <div className="relative group">
-                          <img src={selectedBaker.profile_photo_url} alt="" className="w-24 h-24 object-cover rounded-xl border" style={{ borderColor: '#e0d5cc' }} />
-                          <a href={selectedBaker.profile_photo_url} download target="_blank" rel="noopener noreferrer"
-                            className="absolute inset-0 flex items-center justify-center rounded-xl opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-bold"
-                            style={{ backgroundColor: 'rgba(45,26,14,0.6)' }}>
-                            Download
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Generate captions */}
+            ) : disputedOrders.map(order => (
+              <div key={order.id} className="bg-white rounded-2xl p-6 shadow-sm border-l-4" style={{ borderColor: '#dc2626' }}>
+                <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>Social Captions</p>
-                      <button onClick={() => generateCaptions(selectedBaker)} disabled={generatingCaption}
-                        className="px-4 py-2 rounded-lg text-xs font-semibold text-white"
-                        style={{ backgroundColor: '#8B4513', opacity: generatingCaption ? 0.7 : 1 }}>
-                        {generatingCaption ? 'Generating...' : Object.keys(generatedCaptions).length > 0 ? 'Regenerate' : 'Generate Captions'}
-                      </button>
-                    </div>
-
-                    {Object.keys(generatedCaptions).length > 0 && (
-                      <div className="flex flex-col gap-3">
-                        {PLATFORMS.map(platform => (
-                          <div key={platform} className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
-                            <div className="flex items-center justify-between mb-2">
-                              <p className="text-xs font-bold" style={{ color: '#2d1a0e' }}>{platform}</p>
-                              <button onClick={() => copyCaption(platform)}
-                                className="px-3 py-1 rounded-lg text-xs font-semibold border"
-                                style={{ borderColor: copiedPlatform === platform ? '#166534' : '#e0d5cc', color: copiedPlatform === platform ? '#166534' : '#5c3d2e', backgroundColor: copiedPlatform === platform ? '#dcfce7' : 'white' }}>
-                                {copiedPlatform === platform ? '✓ Copied!' : 'Copy'}
-                              </button>
-                            </div>
-                            <p className="text-xs leading-relaxed mb-2" style={{ color: '#5c3d2e' }}>{generatedCaptions[platform]}</p>
-                            <p className="text-xs italic" style={{ color: '#9c7b6b' }}>{PLATFORM_TIPS[platform]}</p>
-                          </div>
-                        ))}
-                      </div>
+                    <p className="font-bold" style={{ color: '#2d1a0e' }}>{order.customer_name} vs {order.bakers?.business_name}</p>
+                    <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>{order.event_type} · {order.event_date} · ${order.budget}</p>
+                    <p className="text-xs mt-1 font-mono" style={{ color: '#9c7b6b' }}>Order: {order.id.slice(0, 8)}</p>
+                    {order.item_description && <p className="text-sm mt-2" style={{ color: '#5c3d2e' }}>{order.item_description}</p>}
+                  </div>
+                  <div className="flex flex-col gap-2 flex-shrink-0">
+                    <button onClick={() => resolveDispute(order)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166534' }}>Mark Resolved</button>
+                    {order.deposit_paid_at && (
+                      <button onClick={() => issueRefund(order)} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Issue Refund</button>
                     )}
                   </div>
-
-                  {/* Log a post */}
-                  <div className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc' }}>
-                    <p className="text-sm font-semibold mb-3" style={{ color: '#2d1a0e' }}>Log a Social Post</p>
-                    <div className="flex flex-col gap-3">
-                      <div className="flex gap-3">
-                        <select value={newPost.platform} onChange={e => setNewPost({ ...newPost, platform: e.target.value, baker_id: selectedBaker.id })}
-                          className="px-3 py-2 rounded-lg border text-sm flex-1"
-                          style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }}>
-                          {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                        <input type="date" value={newPost.post_date} onChange={e => setNewPost({ ...newPost, post_date: e.target.value, baker_id: selectedBaker.id })}
-                          className="px-3 py-2 rounded-lg border text-sm"
-                          style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
-                      </div>
-                      <textarea value={newPost.caption} onChange={e => setNewPost({ ...newPost, caption: e.target.value, baker_id: selectedBaker.id })}
-                        rows={2} placeholder="Paste the caption you used..."
-                        className="w-full px-3 py-2 rounded-lg border text-sm resize-none"
-                        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
-                      <button onClick={savePost} disabled={savingPost || !newPost.caption}
-                        className="py-2 rounded-lg text-sm font-semibold text-white"
-                        style={{ backgroundColor: '#2d1a0e', opacity: !newPost.caption ? 0.6 : 1 }}>
-                        {savingPost ? 'Saving...' : 'Log Post'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Outreach */}
-                  <OutreachBox baker={selectedBaker} onSend={sendBakerMessage} />
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* SOCIAL LOG */}
-        {activeTab === 'Social Log' && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Social Post Log ({socialLog.length})</h2>
-            </div>
-            {socialLog.length === 0 ? (
-              <div className="text-center py-12" style={{ color: '#5c3d2e' }}>
-                <p className="font-semibold mb-1">No posts logged yet</p>
-                <p className="text-sm">Go to Content Hub, select a baker, and log your posts there.</p>
+        {activeTab === 'Applications' && (
+          <div className="flex flex-col gap-4">
+            {pendingApplications.length === 0 ? (
+              <div className="bg-white rounded-2xl p-12 shadow-sm text-center">
+                <p className="text-2xl mb-2">✓</p>
+                <p className="font-semibold" style={{ color: '#2d1a0e' }}>No pending applications</p>
               </div>
-            ) : (
+            ) : pendingApplications.map(baker => (
+              <div key={baker.id} className="bg-white rounded-2xl p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
+                      {baker.profile_photo_url
+                        ? <img src={baker.profile_photo_url} alt="" className="w-full h-full object-cover" />
+                        : <span className="text-xl font-bold" style={{ color: '#2d1a0e' }}>{baker.business_name?.[0] || 'B'}</span>}
+                    </div>
+                    <div>
+                      <p className="font-bold" style={{ color: '#2d1a0e' }}>{baker.business_name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{baker.email}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state}</p>
+                      {baker.specialties?.length > 0 && <p className="text-xs mt-1" style={{ color: '#8B4513' }}>{baker.specialties.join(', ')}</p>}
+                      {baker.bio && <p className="text-xs mt-1 max-w-md" style={{ color: '#5c3d2e' }}>{baker.bio}</p>}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <Link href={'/bakers/' + baker.id} target="_blank" className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>View Profile</Link>
+                    <button onClick={() => approveBaker(baker)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166534' }}>Approve</button>
+                    <button onClick={() => rejectBaker(baker)} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Reject</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'Accounting' && (
+          <div className="flex flex-col gap-6">
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Transaction Export</h2>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>From</label>
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                      className="px-3 py-1.5 rounded-lg border text-xs"
+                      style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>To</label>
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                      className="px-3 py-1.5 rounded-lg border text-xs"
+                      style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                  </div>
+                  <button onClick={downloadCSV} className="px-5 py-2 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>
+                    Download CSV
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {(() => {
+                  const filtered = getFilteredOrders()
+                  const paidOrders = filtered.filter(o => o.deposit_paid_at)
+                  const gmv = paidOrders.reduce((s, o) => s + (o.amount_total || (o.budget * 100) || 0), 0) / 100
+                  const commission = paidOrders.reduce((s, o) => {
+                    const rate = o.bakers?.is_pro ? 0.07 : 0.10
+                    return s + ((o.amount_total || (o.budget * 100) || 0) / 100) * rate
+                  }, 0)
+                  return [
+                    { label: 'GMV', value: '$' + gmv.toFixed(2) },
+                    { label: 'Commission', value: '$' + commission.toFixed(2) },
+                    { label: 'Paid Orders', value: paidOrders.length },
+                    { label: 'Avg Order', value: paidOrders.length ? '$' + (gmv / paidOrders.length).toFixed(2) : '$0' },
+                  ].map(s => (
+                    <div key={s.label} className="rounded-xl p-4" style={{ backgroundColor: '#f5f0eb' }}>
+                      <p className="text-xs font-semibold mb-1" style={{ color: '#5c3d2e' }}>{s.label}</p>
+                      <p className="text-xl font-bold" style={{ color: '#2d1a0e' }}>{s.value}</p>
+                    </div>
+                  ))
+                })()}
+              </div>
+
+              <h3 className="text-sm font-bold mb-3" style={{ color: '#2d1a0e' }}>Baker Payout Summary</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr style={{ borderBottom: '1px solid #e0d5cc' }}>
-                      {['Date', 'Baker', 'Platform', 'Caption', 'Actions'].map(h => (
+                      {['Baker','Orders','Gross Revenue','Commission Rate','Baker Payout'].map(h => (
                         <th key={h} className="text-left py-2 px-3 font-semibold" style={{ color: '#5c3d2e' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {socialLog.map(post => (
-                      <tr key={post.id} className="border-b" style={{ borderColor: '#f5f0eb' }}>
-                        <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{new Date(post.post_date).toLocaleDateString()}</td>
-                        <td className="py-2.5 px-3 font-semibold" style={{ color: '#2d1a0e' }}>{post.baker_name}</td>
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#dbeafe', color: '#1e40af' }}>{post.platform}</span>
-                        </td>
-                        <td className="py-2.5 px-3 max-w-xs truncate" style={{ color: '#5c3d2e' }}>{post.caption}</td>
-                        <td className="py-2.5 px-3">
-                          <button onClick={() => deletePost(post.id)}
-                            className="px-2 py-1 rounded text-xs border"
-                            style={{ borderColor: '#dc2626', color: '#dc2626' }}>
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {bakers.map(baker => {
+                      const bakerOrders = getFilteredOrders().filter(o => o.baker_id === baker.id && o.deposit_paid_at)
+                      if (bakerOrders.length === 0) return null
+                      const gross = bakerOrders.reduce((s, o) => s + (o.amount_total || (o.budget * 100) || 0), 0) / 100
+                      const rate = baker.is_pro ? 0.07 : 0.10
+                      const payout = gross * (1 - rate)
+                      return (
+                        <tr key={baker.id} className="border-b" style={{ borderColor: '#f5f0eb' }}>
+                          <td className="py-2.5 px-3 font-semibold" style={{ color: '#2d1a0e' }}>{baker.business_name}</td>
+                          <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{bakerOrders.length}</td>
+                          <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>${gross.toFixed(2)}</td>
+                          <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{(rate * 100).toFixed(0)}%</td>
+                          <td className="py-2.5 px-3 font-semibold" style={{ color: '#166534' }}>${payout.toFixed(2)}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* SEASONAL */}
-        {activeTab === 'Seasonal' && (
-          <div className="flex flex-col gap-4">
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold mb-1" style={{ color: '#2d1a0e' }}>Seasonal Campaign Calendar</h2>
-              <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>Upcoming events to plan campaigns around. Click "Plan Campaign" to pre-fill the email builder.</p>
-              <div className="flex flex-col gap-3">
-                {SEASONAL_CAMPAIGNS.map(campaign => {
-                  const urgent = campaign.daysUntil !== null && campaign.daysUntil <= 21 && campaign.daysUntil >= 0
-                  const past = campaign.daysUntil !== null && campaign.daysUntil < 0
-                  return (
-                    <div key={campaign.name} className="flex items-center justify-between p-4 rounded-xl border"
-                      style={{ borderColor: urgent ? '#f59e0b' : '#e0d5cc', backgroundColor: urgent ? '#fffbeb' : past ? '#f5f5f5' : 'white' }}>
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <span className="text-2xl flex-shrink-0">{campaign.emoji}</span>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-bold" style={{ color: past ? '#9c7b6b' : '#2d1a0e' }}>{campaign.name}</p>
-                            {urgent && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#f59e0b', color: 'white' }}>Send soon!</span>}
-                            {past && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#f5f0eb', color: '#9c7b6b' }}>Passed</span>}
-                          </div>
-                          <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
-                            {campaign.date}
-                            {campaign.daysUntil !== null && !past && ' · ' + campaign.daysUntil + ' days away'}
-                          </p>
-                          <p className="text-xs mt-1" style={{ color: '#8B4513' }}>{campaign.tip}</p>
-                        </div>
-                      </div>
-                      {!past && (
-                        <button
-                          onClick={() => {
-                            setEmailSubject('🎉 ' + campaign.name + ' is coming — find your perfect baker on Whiskly!')
-                            setEmailBody('Hi there,\n\n' + campaign.name + ' is coming up and we\'ve got amazing bakers ready to make it special.\n\nBrowse our bakers at https://whiskly.vercel.app/bakers\n\nBook early — spots fill up fast!\n\nThe Whiskly Team')
-                            setEmailAudience('customers')
-                            setActiveTab('Campaigns')
-                          }}
-                          className="flex-shrink-0 ml-4 px-4 py-2 rounded-lg text-xs font-semibold text-white"
-                          style={{ backgroundColor: urgent ? '#f59e0b' : '#2d1a0e' }}>
-                          Plan Campaign
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
               </div>
             </div>
           </div>
         )}
-
       </div>
-    </div>
-  )
-}
-
-function OutreachBox({ baker, onSend }: { baker: any, onSend: (baker: any, message: string) => void }) {
-  const [message, setMessage] = useState('')
-  const [sending, setSending] = useState(false)
-
-  async function handleSend() {
-    if (!message.trim()) return
-    setSending(true)
-    await onSend(baker, message)
-    setMessage('')
-    setSending(false)
-  }
-
-  return (
-    <div className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc' }}>
-      <p className="text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Message {baker.business_name}</p>
-      <p className="text-xs mb-3" style={{ color: '#5c3d2e' }}>Send a direct email — e.g. "We want to feature you this week!"</p>
-      <textarea value={message} onChange={e => setMessage(e.target.value)} rows={2}
-        placeholder={'Hi ' + (baker.business_name) + ', we\'d love to feature you...'}
-        className="w-full px-3 py-2 rounded-lg border text-sm resize-none mb-2"
-        style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-      <button onClick={handleSend} disabled={sending || !message.trim()}
-        className="w-full py-2 rounded-lg text-sm font-semibold text-white"
-        style={{ backgroundColor: '#2d1a0e', opacity: (!message.trim() || sending) ? 0.6 : 1 }}>
-        {sending ? 'Sending...' : 'Send Message'}
-      </button>
     </div>
   )
 }
