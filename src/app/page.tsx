@@ -31,7 +31,7 @@ export default function Home() {
 
       {/* Hero */}
       <section className="px-5 md:px-16 py-10 md:py-16" style={{ maxWidth: '1280px', margin: '0 auto' }}>
-        <div className="flex flex-col md:flex-row items-center justify-between gap-8 md:gap-12">
+        <div className="flex flex-col-reverse md:flex-row items-center justify-between gap-8 md:gap-12">
 
           {/* Left */}
           <div className="w-full md:max-w-xl transition-all duration-700"
@@ -81,12 +81,10 @@ export default function Home() {
             </div>
 
             {/* CTA */}
-            <div className="flex gap-3 mt-6 flex-wrap">
-              <Link href="/bakers" className="px-6 py-3 rounded-xl text-white font-semibold text-sm"
-                style={{ backgroundColor: '#2d1a0e' }}>Browse Bakers</Link>
-              <Link href="/join" className="px-6 py-3 rounded-xl font-semibold text-sm border"
-                style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Become a Baker →</Link>
-            </div>
+<div className="flex gap-3 mt-6 flex-wrap">
+  <Link href="/join" className="px-6 py-3 rounded-xl font-semibold text-sm border"
+    style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Become a Baker →</Link>
+</div>
 
             {/* Stats */}
             <div className="flex gap-6 mt-8 pt-6 border-t" style={{ borderColor: '#e0d5cc' }}>
@@ -145,8 +143,7 @@ export default function Home() {
           </div>
 
           {/* Mobile hero image — simpler, no floating cards */}
-          <div className="md:hidden w-full transition-all duration-1000"
-            style={{ opacity: loaded ? 1 : 0, transitionDelay: '200ms' }}>
+<div className="md:hidden w-full">
             <div className="rounded-2xl overflow-hidden shadow-xl relative" style={{ height: '260px' }}>
               <img src="/hero.jpg" alt="Baker decorating a cake" className="w-full h-full object-cover" />
               <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(45,26,14,0.4) 0%, transparent 60%)' }} />
