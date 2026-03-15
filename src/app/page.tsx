@@ -102,7 +102,7 @@ export default function Home() {
             style={{ opacity: loaded ? 1 : 0, transform: loaded ? 'translateY(0)' : 'translateY(32px)', transitionDelay: '200ms' }}>
             <div style={{ animation: 'float 6s ease-in-out infinite' }}>
               <div className="rounded-3xl overflow-hidden shadow-2xl relative" style={{ width: '420px', height: '500px' }}>
-                <img src="/hero.jpg" alt="Baker decorating a cake" className="w-full h-full object-cover" />
+                <img src="/hero.jpg" alt="Baker decorating a cake" className="w-full h-full object-cover" style={{ objectPosition: 'center 20%' }} />
                 <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(45,26,14,0.3) 0%, transparent 60%)' }} />
               </div>
             </div>
@@ -144,8 +144,8 @@ export default function Home() {
 
           {/* Mobile hero image — simpler, no floating cards */}
 <div className="md:hidden w-full">
-            <div className="rounded-2xl overflow-hidden shadow-xl relative" style={{ height: '260px' }}>
-              <img src="/hero.jpg" alt="Baker decorating a cake" className="w-full h-full object-cover" />
+            <div className="rounded-2xl overflow-hidden shadow-xl relative" style={{ height: '320px' }}>
+              <img src="/hero.jpg" alt="Baker decorating a cake" className="w-full h-full object-cover" style={{ objectPosition: 'center 20%' }} />
               <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(45,26,14,0.4) 0%, transparent 60%)' }} />
               {featuredBaker && (
                 <Link href={'/bakers/' + featuredBaker.id}
