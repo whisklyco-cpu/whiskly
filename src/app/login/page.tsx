@@ -75,6 +75,11 @@ if (baker) {
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
               />
             </div>
+            <div className="text-right -mt-1">
+  <Link href="/forgot-password" className="text-xs underline" style={{ color: '#8B4513' }}>
+    Forgot password?
+  </Link>
+</div>
 
             <button
               onClick={handleLogin}

@@ -713,17 +713,22 @@ export default function BakerDashboard() {
         <Link href="/" className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>Whiskly</Link>
         <p className="text-sm font-medium" style={{ color: '#5c3d2e' }}>Baker Dashboard</p>
         <div className="flex items-center gap-3">
-          <Link href={'/bakers/' + baker?.id}
-            className="px-4 py-2 text-sm rounded-lg border"
-            style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
-            View Profile
-          </Link>
-          <button onClick={handleSignOut}
-            className="px-4 py-2 text-sm rounded-lg text-white"
-            style={{ backgroundColor: '#2d1a0e' }}>
-            Sign Out
-          </button>
-        </div>
+  <Link href={'/bakers/' + baker?.id}
+    className="px-4 py-2 text-sm rounded-lg border"
+    style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
+    View Profile
+  </Link>
+  <Link href="/account/settings"
+    className="px-4 py-2 text-sm rounded-lg border"
+    style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+    Account Settings
+  </Link>
+  <button onClick={handleSignOut}
+    className="px-4 py-2 text-sm rounded-lg text-white"
+    style={{ backgroundColor: '#2d1a0e' }}>
+    Sign Out
+  </button>
+</div>
       </nav>
 
       <div className="px-4 md:px-8 py-8 max-w-6xl mx-auto">

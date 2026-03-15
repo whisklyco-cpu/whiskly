@@ -836,9 +836,12 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                   </div>
                 ))}
                 <div className="pt-2 flex items-center justify-between">
-                  <p className="text-xs" style={{ color: '#5c3d2e' }}>Want to sell on Whiskly? <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>Join as a Baker</Link></p>
-                  <button onClick={handleSignOut} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Sign Out</button>
-                </div>
+  <p className="text-xs" style={{ color: '#5c3d2e' }}>Want to sell on Whiskly? <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>Join as a Baker</Link></p>
+  <div className="flex gap-2">
+    <Link href="/account/settings" className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Account Settings</Link>
+    <button onClick={handleSignOut} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Sign Out</button>
+  </div>
+</div>
               </div>
             </div>
 
