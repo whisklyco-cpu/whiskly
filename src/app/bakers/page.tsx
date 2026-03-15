@@ -43,6 +43,7 @@ export default function BrowseBakers() {
   const [maxPrice, setMaxPrice] = useState('')
   const [deliveryOnly, setDeliveryOnly] = useState(false)
   const [rushOnly, setRushOnly] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   useEffect(() => { loadBakers() }, [])
 
@@ -65,7 +66,6 @@ export default function BrowseBakers() {
     results.sort((a, b) => {
       if (a.tier === 'pro' && b.tier !== 'pro') return -1
       if (b.tier === 'pro' && a.tier !== 'pro') return 1
-      // Secondary: highest rated first
       return (b.avg_rating || 0) - (a.avg_rating || 0)
     })
     setFiltered(results)
@@ -88,92 +88,166 @@ export default function BrowseBakers() {
   }
 
   const hasFilters = search || selectedSpecialty || selectedDietary || maxPrice || deliveryOnly || rushOnly
+  const activeFilterCount = [search, selectedSpecialty, selectedDietary, maxPrice, deliveryOnly, rushOnly].filter(Boolean).length
+
+  const FilterPanel = () => (
+    <div className="flex flex-col gap-5">
+      {/* Search */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Search</label>
+        <input value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Name, city, specialty..."
+          className="w-full px-3 py-2.5 rounded-lg border text-sm"
+          style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+      </div>
+
+      {/* Specialty */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <label className="block text-sm font-semibold mb-3" style={{ color: '#2d1a0e' }}>Specialty</label>
+        <div className="flex flex-col gap-1.5">
+          {['', ...SPECIALTIES].map((s, i) => (
+            <button key={i} onClick={() => setSelectedSpecialty(s)}
+              className="text-left text-sm px-3 py-1.5 rounded-lg transition-all"
+              style={{ backgroundColor: selectedSpecialty === s ? '#2d1a0e' : 'transparent', color: selectedSpecialty === s ? 'white' : '#5c3d2e' }}>
+              {s || 'All Specialties'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Dietary */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <label className="block text-sm font-semibold mb-3" style={{ color: '#2d1a0e' }}>Dietary Options</label>
+        <div className="flex flex-col gap-1.5">
+          {['', ...DIETARY].map((tag, i) => (
+            <button key={i} onClick={() => setSelectedDietary(tag)}
+              className="text-left text-sm px-3 py-1.5 rounded-lg transition-all"
+              style={{ backgroundColor: selectedDietary === tag ? '#2d1a0e' : 'transparent', color: selectedDietary === tag ? 'white' : '#5c3d2e' }}>
+              {tag || 'Any'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Price */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Max Starting Price</label>
+        <select value={maxPrice} onChange={e => setMaxPrice(e.target.value)}
+          className="w-full px-3 py-2.5 rounded-lg border text-sm"
+          style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
+          <option value="">Any price</option>
+          <option value="50">Under $50</option>
+          <option value="100">Under $100</option>
+          <option value="150">Under $150</option>
+          <option value="200">Under $200</option>
+          <option value="300">Under $300</option>
+        </select>
+      </div>
+
+      {/* More filters */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm flex flex-col gap-3">
+        <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>More Filters</label>
+        <button onClick={() => setDeliveryOnly(!deliveryOnly)} className="flex items-center gap-3 text-left">
+          <div className="w-9 h-5 rounded-full relative flex-shrink-0 transition-all" style={{ backgroundColor: deliveryOnly ? '#2d1a0e' : '#e0d5cc' }}>
+            <div className="w-3 h-3 bg-white rounded-full absolute top-1 transition-all" style={{ left: deliveryOnly ? '20px' : '4px' }} />
+          </div>
+          <span className="text-sm" style={{ color: '#2d1a0e' }}>Delivery available</span>
+        </button>
+        <button onClick={() => setRushOnly(!rushOnly)} className="flex items-center gap-3 text-left">
+          <div className="w-9 h-5 rounded-full relative flex-shrink-0 transition-all" style={{ backgroundColor: rushOnly ? '#2d1a0e' : '#e0d5cc' }}>
+            <div className="w-3 h-3 bg-white rounded-full absolute top-1 transition-all" style={{ left: rushOnly ? '20px' : '4px' }} />
+          </div>
+          <span className="text-sm" style={{ color: '#2d1a0e' }}>Rush orders accepted</span>
+        </button>
+      </div>
+
+      {hasFilters && (
+        <button onClick={clearFilters}
+          className="w-full py-3 rounded-xl border text-sm font-semibold"
+          style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
+          Clear All Filters
+        </button>
+      )}
+    </div>
+  )
 
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
-
       <Navbar />
 
-      <div className="max-w-7xl mx-auto px-6 py-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2" style={{ color: '#2d1a0e' }}>Browse Bakers</h1>
-          <p className="text-sm" style={{ color: '#5c3d2e' }}>
-            {filtered.length} baker{filtered.length !== 1 ? 's' : ''} found
-            {hasFilters && <> · <button onClick={clearFilters} className="underline font-semibold" style={{ color: '#8B4513' }}>Clear filters</button></>}
-          </p>
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-10">
+
+        {/* Header */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ color: '#2d1a0e' }}>Browse Bakers</h1>
+            <p className="text-sm" style={{ color: '#5c3d2e' }}>
+              {filtered.length} baker{filtered.length !== 1 ? 's' : ''} found
+              {hasFilters && <> · <button onClick={clearFilters} className="underline font-semibold" style={{ color: '#8B4513' }}>Clear filters</button></>}
+            </p>
+          </div>
+
+          {/* Mobile filter button */}
+          <button
+            className="md:hidden flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm relative"
+            style={{ backgroundColor: filtersOpen ? '#2d1a0e' : 'white', color: filtersOpen ? 'white' : '#2d1a0e', border: '1px solid #e0d5cc' }}
+            onClick={() => setFiltersOpen(!filtersOpen)}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center"
+                style={{ backgroundColor: '#8B4513', color: 'white' }}>
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
         </div>
 
+        {/* Mobile search bar — always visible */}
+        <div className="md:hidden mb-4">
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name, city, specialty..."
+            className="w-full px-4 py-3 rounded-xl border text-sm bg-white"
+            style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }} />
+        </div>
+
+        {/* Mobile quick specialty pills */}
+        <div className="md:hidden mb-4 flex gap-2 overflow-x-auto pb-1">
+          {['', ...SPECIALTIES.slice(0, 6)].map((s, i) => (
+            <button key={i} onClick={() => setSelectedSpecialty(s)}
+              className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium"
+              style={{
+                backgroundColor: selectedSpecialty === s ? '#2d1a0e' : 'white',
+                color: selectedSpecialty === s ? 'white' : '#2d1a0e',
+                border: '1px solid ' + (selectedSpecialty === s ? '#2d1a0e' : '#e0d5cc')
+              }}>
+              {s || 'All'}
+            </button>
+          ))}
+        </div>
+
+        {/* Mobile filter drawer */}
+        {filtersOpen && (
+          <div className="md:hidden mb-6">
+            <FilterPanel />
+            <button onClick={() => setFiltersOpen(false)}
+              className="w-full mt-4 py-3 rounded-xl text-white font-semibold text-sm"
+              style={{ backgroundColor: '#2d1a0e' }}>
+              Show {filtered.length} Baker{filtered.length !== 1 ? 's' : ''}
+            </button>
+          </div>
+        )}
+
         <div className="flex gap-8">
-
-          {/* Sidebar */}
-          <div className="w-64 flex-shrink-0 flex flex-col gap-5">
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Search</label>
-              <input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Name, city, specialty..."
-                className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-            </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <label className="block text-sm font-semibold mb-3" style={{ color: '#2d1a0e' }}>Specialty</label>
-              <div className="flex flex-col gap-1.5">
-                {['', ...SPECIALTIES].map((s, i) => (
-                  <button key={i} onClick={() => setSelectedSpecialty(s)}
-                    className="text-left text-sm px-3 py-1.5 rounded-lg transition-all"
-                    style={{ backgroundColor: selectedSpecialty === s ? '#2d1a0e' : 'transparent', color: selectedSpecialty === s ? 'white' : '#5c3d2e' }}>
-                    {s || 'All Specialties'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <label className="block text-sm font-semibold mb-3" style={{ color: '#2d1a0e' }}>Dietary Options</label>
-              <div className="flex flex-col gap-1.5">
-                {['', ...DIETARY].map((tag, i) => (
-                  <button key={i} onClick={() => setSelectedDietary(tag)}
-                    className="text-left text-sm px-3 py-1.5 rounded-lg transition-all"
-                    style={{ backgroundColor: selectedDietary === tag ? '#2d1a0e' : 'transparent', color: selectedDietary === tag ? 'white' : '#5c3d2e' }}>
-                    {tag || 'Any'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Max Starting Price</label>
-              <select value={maxPrice} onChange={e => setMaxPrice(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
-                <option value="">Any price</option>
-                <option value="50">Under $50</option>
-                <option value="100">Under $100</option>
-                <option value="150">Under $150</option>
-                <option value="200">Under $200</option>
-                <option value="300">Under $300</option>
-              </select>
-            </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm flex flex-col gap-3">
-              <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>More Filters</label>
-              <button onClick={() => setDeliveryOnly(!deliveryOnly)} className="flex items-center gap-3 text-left">
-                <div className="w-9 h-5 rounded-full relative flex-shrink-0 transition-all" style={{ backgroundColor: deliveryOnly ? '#2d1a0e' : '#e0d5cc' }}>
-                  <div className="w-3 h-3 bg-white rounded-full absolute top-1 transition-all" style={{ left: deliveryOnly ? '20px' : '4px' }} />
-                </div>
-                <span className="text-sm" style={{ color: '#2d1a0e' }}>Delivery available</span>
-              </button>
-              <button onClick={() => setRushOnly(!rushOnly)} className="flex items-center gap-3 text-left">
-                <div className="w-9 h-5 rounded-full relative flex-shrink-0 transition-all" style={{ backgroundColor: rushOnly ? '#2d1a0e' : '#e0d5cc' }}>
-                  <div className="w-3 h-3 bg-white rounded-full absolute top-1 transition-all" style={{ left: rushOnly ? '20px' : '4px' }} />
-                </div>
-                <span className="text-sm" style={{ color: '#2d1a0e' }}>Rush orders accepted</span>
-              </button>
-            </div>
+          {/* Desktop sidebar */}
+          <div className="hidden md:block w-64 flex-shrink-0">
+            <FilterPanel />
           </div>
 
           {/* Baker Grid */}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             {loading ? (
               <div className="flex items-center justify-center py-20">
                 <p style={{ color: '#5c3d2e' }}>Loading bakers...</p>
@@ -186,11 +260,11 @@ export default function BrowseBakers() {
                 <button onClick={clearFilters} className="px-5 py-2 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Clear Filters</button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5">
                 {filtered.map((baker) => (
                   <Link key={baker.id} href={'/bakers/' + baker.id}>
                     <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all group">
-                      <div className="h-48 overflow-hidden relative" style={{ backgroundColor: '#f5f0eb' }}>
+                      <div className="overflow-hidden relative" style={{ height: '200px', backgroundColor: '#f5f0eb' }}>
                         {baker.profile_photo_url ? (
                           <img src={baker.profile_photo_url} alt={baker.business_name}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
@@ -210,12 +284,11 @@ export default function BrowseBakers() {
                           <div className="absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>🏠 Cottage</div>
                         )}
                       </div>
-                      <div className="p-5">
+                      <div className="p-4 md:p-5">
                         <div className="flex items-start justify-between mb-1">
                           <div className="flex-1 min-w-0 pr-2">
                             <h3 className="font-bold text-base truncate" style={{ color: '#2d1a0e' }}>{baker.business_name}</h3>
                             <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>📍 {baker.city}, {baker.state}</p>
-                            {/* Star rating — only shows when baker has reviews */}
                             <StarRating rating={baker.avg_rating ?? null} count={baker.review_count ?? 0} />
                           </div>
                           {baker.starting_price && (
