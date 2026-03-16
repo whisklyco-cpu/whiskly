@@ -625,6 +625,7 @@ function EmergencyCase({ emergencyCase: ec, bakers, orders, onResolve }: { emerg
   const [orderOutcomesSent, setOrderOutcomesSent] = useState<Set<string>>(new Set())
   const [processingRefund, setProcessingRefund] = useState<string | null>(null)
   const [emailCopied, setEmailCopied] = useState<string | null>(null)
+  const [emailModal, setEmailModal] = useState<{ subject: string, body: string, to: string } | null>(null)
 
   const baker = bakers.find(b => b.id === ec.baker_id) || ec.bakers
   const affectedOrders = orders.filter(o => o.baker_id === ec.baker_id && ['pending','confirmed','in_progress'].includes(o.status))
@@ -689,13 +690,29 @@ function EmergencyCase({ emergencyCase: ec, bakers, orders, onResolve }: { emerg
   }
 
   function copyEmail(text: string, key: string) {
-    try {
-      navigator.clipboard.writeText(text).then(() => { setEmailCopied(key); setTimeout(() => setEmailCopied(null), 2000) })
-    } catch {
-      // fallback — select the textarea
-      const el = document.getElementById('email-' + key) as HTMLTextAreaElement
-      if (el) { el.select(); document.execCommand('copy'); setEmailCopied(key); setTimeout(() => setEmailCopied(null), 2000) }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text)
+        .then(() => { setEmailCopied(key); setTimeout(() => setEmailCopied(null), 2000) })
+        .catch(() => fallbackCopy(text, key))
+    } else {
+      fallbackCopy(text, key)
     }
+  }
+
+  function fallbackCopy(text: string, key: string) {
+    const el = document.getElementById('email-' + key) as HTMLTextAreaElement
+    if (el) {
+      el.select()
+      el.setSelectionRange(0, 99999)
+      try { document.execCommand('copy'); setEmailCopied(key); setTimeout(() => setEmailCopied(null), 2000) }
+      catch { setEmailModal({ to: '', subject: '', body: text }) }
+    } else {
+      setEmailModal({ to: '', subject: '', body: text })
+    }
+  }
+
+  function openEmailModal(to: string, subject: string, body: string) {
+    setEmailModal({ to, subject, body })
   }
 
   const allOrdersViewed = affectedOrders.length === 0 || affectedOrders.every(o => viewedOrders.has(o.id))
@@ -708,6 +725,38 @@ function EmergencyCase({ emergencyCase: ec, bakers, orders, onResolve }: { emerg
   const replacementBakers = bakers.filter(b => b.id !== ec.baker_id && b.is_active && !b.is_suspended && !b.is_on_vacation && !b.is_at_capacity && !b.is_emergency_pause && b.city?.toLowerCase() === baker?.city?.toLowerCase())
 
   return (
+    <>
+    {/* Email Fallback Modal */}
+    {emailModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+        <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <p className="font-bold" style={{ color: '#2d1a0e' }}>Copy Email Text</p>
+            <button onClick={() => setEmailModal(null)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Close</button>
+          </div>
+          {emailModal.to && <p className="text-xs" style={{ color: '#5c3d2e' }}><strong>To:</strong> {emailModal.to}</p>}
+          {emailModal.subject && <p className="text-xs" style={{ color: '#5c3d2e' }}><strong>Subject:</strong> {emailModal.subject}</p>}
+          <p className="text-xs font-semibold" style={{ color: '#854d0e' }}>Select all the text below and copy it manually (Ctrl+A then Ctrl+C / Cmd+A then Cmd+C):</p>
+          <textarea
+            readOnly
+            value={emailModal.body}
+            rows={10}
+            onFocus={e => e.target.select()}
+            className="w-full px-3 py-2 rounded-xl border text-xs resize-none"
+            style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6', fontFamily: 'inherit' }} />
+          <div className="flex gap-2">
+            {emailModal.to && (
+              <a href={'mailto:' + emailModal.to + (emailModal.subject ? '?subject=' + encodeURIComponent(emailModal.subject) + '&body=' + encodeURIComponent(emailModal.body) : '')}
+                className="flex-1 py-2.5 rounded-xl text-white text-xs font-semibold text-center" style={{ backgroundColor: '#2d1a0e' }}>
+                Try Open in Email Client
+              </a>
+            )}
+            <button onClick={() => setEmailModal(null)} className="flex-1 py-2.5 rounded-xl border text-xs font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Done</button>
+          </div>
+        </div>
+      </div>
+    )}
+
     <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4" style={{ borderColor: '#dc2626' }}>
 
       {/* Header */}
@@ -1092,6 +1141,7 @@ function EmergencyCase({ emergencyCase: ec, bakers, orders, onResolve }: { emerg
         </div>
       </div>
     </div>
+    </>
   )
 }
 function DisputeCase({ order, bakers, onResolve, onRefund }: { order: any, bakers: any[], onResolve: (orderId: string, outcome: string, strikeBaker: boolean) => void, onRefund: () => void }) {
@@ -1101,8 +1151,22 @@ function DisputeCase({ order, bakers, onResolve, onRefund }: { order: any, baker
   const [strikeBaker, setStrikeBaker] = useState(false)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [emailModal, setEmailModal] = useState<{ to: string, subject: string, body: string } | null>(null)
+  const [emailCopied, setEmailCopied] = useState<string | null>(null)
 
   const baker = bakers.find(b => b.id === order.baker_id) || order.bakers
+
+  function copyEmail(text: string, key: string) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text)
+        .then(() => { setEmailCopied(key); setTimeout(() => setEmailCopied(null), 2000) })
+        .catch(() => setEmailModal({ to: '', subject: '', body: text }))
+    } else {
+      const el = document.getElementById('demail-' + key) as HTMLTextAreaElement
+      if (el) { el.select(); el.setSelectionRange(0, 99999); try { document.execCommand('copy'); setEmailCopied(key); setTimeout(() => setEmailCopied(null), 2000) } catch { setEmailModal({ to: '', subject: '', body: text }) } }
+      else { setEmailModal({ to: '', subject: '', body: text }) }
+    }
+  }
 
   const STEPS = [
     { label: 'Review order details and evidence', key: 'review' },
@@ -1130,6 +1194,25 @@ function DisputeCase({ order, bakers, onResolve, onRefund }: { order: any, baker
   ]
 
   return (
+    <>
+    {emailModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+        <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <p className="font-bold" style={{ color: '#2d1a0e' }}>Copy Email Text</p>
+            <button onClick={() => setEmailModal(null)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Close</button>
+          </div>
+          {emailModal.to && <p className="text-xs" style={{ color: '#5c3d2e' }}><strong>To:</strong> {emailModal.to}</p>}
+          {emailModal.subject && <p className="text-xs" style={{ color: '#5c3d2e' }}><strong>Subject:</strong> {emailModal.subject}</p>}
+          <p className="text-xs font-semibold" style={{ color: '#854d0e' }}>Select all and copy (Ctrl+A then Ctrl+C / Cmd+A then Cmd+C):</p>
+          <textarea readOnly value={emailModal.body} rows={10} onFocus={e => e.target.select()} className="w-full px-3 py-2 rounded-xl border text-xs resize-none" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6', fontFamily: 'inherit' }} />
+          <div className="flex gap-2">
+            {emailModal.to && <a href={'mailto:' + emailModal.to + (emailModal.subject ? '?subject=' + encodeURIComponent(emailModal.subject) + '&body=' + encodeURIComponent(emailModal.body) : '')} className="flex-1 py-2.5 rounded-xl text-white text-xs font-semibold text-center" style={{ backgroundColor: '#2d1a0e' }}>Try Open in Email Client</a>}
+            <button onClick={() => setEmailModal(null)} className="flex-1 py-2.5 rounded-xl border text-xs font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Done</button>
+          </div>
+        </div>
+      </div>
+    )}
     <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4" style={{ borderColor: '#dc2626' }}>
       {/* Header */}
       <div className="mb-5">
@@ -1329,25 +1412,45 @@ function DisputeCase({ order, bakers, onResolve, onRefund }: { order: any, baker
                     {ruling === 'partial' && <p className="text-xs" style={{ color: '#5c3d2e' }}>1. Issue partial refund in Stripe dashboard manually. 2. Email both parties with decision and refund amount. 3. Click Close Dispute.</p>}
                     {ruling === 'noop' && <p className="text-xs" style={{ color: '#5c3d2e' }}>1. Email both parties that the dispute has been reviewed and no action was needed. 2. Click Close Dispute.</p>}
                   </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {(ruling === 'customer') && order.deposit_paid_at && (
-                      <button onClick={onRefund} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Issue Refund via Stripe</button>
-                    )}
-                    <a href={'mailto:' + order.customer_email + '?subject=' + encodeURIComponent('Whiskly Dispute Resolution — Order ' + order.id.slice(0,8)) + '&body=' + encodeURIComponent(
-                      ruling === 'customer' ? 'Hi ' + order.customer_name + ',\n\nWe have completed our review of your dispute for order ' + order.id.slice(0,8) + '. We are ruling in your favor and a full refund has been issued. Please allow 5-10 business days.\n\nWhiskly Support'
-                      : ruling === 'baker' ? 'Hi ' + order.customer_name + ',\n\nWe have completed our review of your dispute for order ' + order.id.slice(0,8) + '. After reviewing the evidence we are unable to issue a refund at this time. If you have further questions please reply to this email.\n\nWhiskly Support'
-                      : 'Hi ' + order.customer_name + ',\n\nWe have completed our review of your dispute for order ' + order.id.slice(0,8) + '. We have made a decision and will be in touch shortly.\n\nWhiskly Support'
-                    )} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>
-                      Email Customer Decision
-                    </a>
-                    <a href={'mailto:' + baker?.email + '?subject=' + encodeURIComponent('Whiskly Dispute Resolution — Order ' + order.id.slice(0,8)) + '&body=' + encodeURIComponent(
-                      ruling === 'customer' ? 'Hi ' + order.bakers?.business_name + ',\n\nWe have completed our review of the dispute on order ' + order.id.slice(0,8) + '. We have ruled in the customer\'s favor and issued a refund. If you believe this decision is incorrect please reply within 7 days.\n\nWhiskly Support'
-                      : ruling === 'baker' ? 'Hi ' + order.bakers?.business_name + ',\n\nWe have completed our review of the dispute on order ' + order.id.slice(0,8) + '. We have ruled in your favor.\n\nWhiskly Support'
-                      : 'Hi ' + order.bakers?.business_name + ',\n\nWe have completed our review of the dispute on order ' + order.id.slice(0,8) + '. We have made a decision and will be in touch shortly.\n\nWhiskly Support'
-                    )} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#8B4513', color: '#8B4513' }}>
-                      Email Baker Decision
-                    </a>
-                  </div>
+                  {(() => {
+                    const custSubject = 'Whiskly Dispute Resolution — Order ' + order.id.slice(0,8)
+                    const bakerSubject = 'Whiskly Dispute Resolution — Order ' + order.id.slice(0,8)
+                    const customerBody = ruling === 'customer'
+                      ? 'Hi ' + order.customer_name + ',\n\nWe have completed our review of your dispute for order ' + order.id.slice(0,8) + '. We are ruling in your favor and a full refund has been issued. Please allow 5-10 business days.\n\nWhiskly Support\nsupport@whiskly.co'
+                      : ruling === 'baker'
+                      ? 'Hi ' + order.customer_name + ',\n\nWe have completed our review of your dispute for order ' + order.id.slice(0,8) + '. After reviewing the evidence we are unable to issue a refund at this time. If you have further questions please reply to this email.\n\nWhiskly Support\nsupport@whiskly.co'
+                      : 'Hi ' + order.customer_name + ',\n\nWe have completed our review of your dispute for order ' + order.id.slice(0,8) + '. We have made a decision and will be in touch shortly.\n\nWhiskly Support\nsupport@whiskly.co'
+                    const bakerBody = ruling === 'customer'
+                      ? 'Hi ' + order.bakers?.business_name + ",\n\nWe have completed our review of the dispute on order " + order.id.slice(0,8) + ". We ruled in the customer's favor and issued a refund. If you believe this is incorrect please reply within 7 days.\n\nWhiskly Support\nsupport@whiskly.co"
+                      : ruling === 'baker'
+                      ? 'Hi ' + order.bakers?.business_name + ',\n\nWe have completed our review of the dispute on order ' + order.id.slice(0,8) + '. We have ruled in your favor.\n\nWhiskly Support\nsupport@whiskly.co'
+                      : 'Hi ' + order.bakers?.business_name + ',\n\nWe have completed our review of the dispute on order ' + order.id.slice(0,8) + '. We have made a decision and will be in touch shortly.\n\nWhiskly Support\nsupport@whiskly.co'
+                    return (
+                      <div className="flex flex-col gap-3">
+                        {(ruling === 'customer') && order.deposit_paid_at && (
+                          <button onClick={onRefund} className="px-4 py-2 rounded-lg text-xs font-semibold border self-start" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Issue Refund via Stripe</button>
+                        )}
+                        <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                          <p className="text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>Email customer ({order.customer_email}):</p>
+                          <textarea id="demail-customer" readOnly value={customerBody} rows={4} onFocus={e => e.target.select()} className="w-full px-3 py-2 rounded-lg border text-xs resize-none mb-2" style={{ borderColor: '#e0d5cc', color: '#5c3d2e', backgroundColor: 'white', fontFamily: 'inherit' }} />
+                          <div className="flex gap-2 flex-wrap">
+                            <a href={'mailto:' + order.customer_email + '?subject=' + encodeURIComponent(custSubject) + '&body=' + encodeURIComponent(customerBody)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Open in Email</a>
+                            <button onClick={() => copyEmail(customerBody, 'customer')} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>{emailCopied === 'customer' ? '✓ Copied!' : 'Copy Text'}</button>
+                            <button onClick={() => setEmailModal({ to: order.customer_email, subject: custSubject, body: customerBody })} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>View Full</button>
+                          </div>
+                        </div>
+                        <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                          <p className="text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>Email baker ({baker?.email}):</p>
+                          <textarea id="demail-baker" readOnly value={bakerBody} rows={4} onFocus={e => e.target.select()} className="w-full px-3 py-2 rounded-lg border text-xs resize-none mb-2" style={{ borderColor: '#e0d5cc', color: '#5c3d2e', backgroundColor: 'white', fontFamily: 'inherit' }} />
+                          <div className="flex gap-2 flex-wrap">
+                            <a href={'mailto:' + baker?.email + '?subject=' + encodeURIComponent(bakerSubject) + '&body=' + encodeURIComponent(bakerBody)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#8B4513', color: '#8B4513' }}>Open in Email</a>
+                            <button onClick={() => copyEmail(bakerBody, 'baker')} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>{emailCopied === 'baker' ? '✓ Copied!' : 'Copy Text'}</button>
+                            <button onClick={() => setEmailModal({ to: baker?.email || '', subject: bakerSubject, body: bakerBody })} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#8B4513', color: '#8B4513' }}>View Full</button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
                   <button onClick={() => {
                     toggleStep(STEPS[3].label, 4)
                     onResolve(order.id, ruling === 'customer' ? 'refund' : 'complete', strikeBaker)
@@ -1362,5 +1465,6 @@ function DisputeCase({ order, bakers, onResolve, onRefund }: { order: any, baker
 
       </div>
     </div>
+    </>
   )
 }
