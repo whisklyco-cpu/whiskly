@@ -484,20 +484,11 @@ export default function AdminPanel() {
             {disputedOrders.length === 0 ? (
               <div className="bg-white rounded-2xl p-12 shadow-sm text-center"><p className="text-2xl mb-2">✓</p><p className="font-semibold" style={{ color: '#2d1a0e' }}>No active disputes</p><p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>All orders are in good standing.</p></div>
             ) : disputedOrders.map(order => (
-              <div key={order.id} className="bg-white rounded-2xl p-6 shadow-sm border-l-4" style={{ borderColor: '#dc2626' }}>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="font-bold" style={{ color: '#2d1a0e' }}>{order.customer_name} vs {order.bakers?.business_name}</p>
-                    <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>{order.event_type} · {order.event_date} · ${order.budget}</p>
-                    <p className="text-xs mt-1 font-mono" style={{ color: '#9c7b6b' }}>Order: {order.id.slice(0, 8)}</p>
-                    {order.item_description && <p className="text-sm mt-2" style={{ color: '#5c3d2e' }}>{order.item_description}</p>}
-                  </div>
-                  <div className="flex flex-col gap-2 flex-shrink-0">
-                    <button onClick={() => resolveDispute(order)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166534' }}>Mark Resolved</button>
-                    {order.deposit_paid_at && <button onClick={() => issueRefund(order)} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Issue Refund</button>}
-                  </div>
-                </div>
-              </div>
+              <DisputeCase key={order.id} order={order} bakers={bakers} onResolve={async (orderId: string, outcome: string, strikeBaker: boolean) => {
+                await supabase.from('orders').update({ is_disputed: false, is_flagged: false, status: outcome === 'refund' ? 'refunded' : 'complete' }).eq('id', orderId)
+                setOrders(orders.map(o => o.id === orderId ? { ...o, is_disputed: false, is_flagged: false, status: outcome === 'refund' ? 'refunded' : 'complete' } : o))
+                if (strikeBaker) { const b = bakers.find(b => b.id === order.baker_id); if (b) handleStrike(b) }
+              }} onRefund={() => issueRefund(order)} />
             ))}
           </div>
         )}
@@ -621,9 +612,11 @@ export default function AdminPanel() {
 
 function EmergencyCase({ emergencyCase: ec, bakers, orders, onResolve }: { emergencyCase: any, bakers: any[], orders: any[], onResolve: (id: string, resolution: string) => void }) {
   const [steps, setSteps] = useState<string[]>(ec.steps_completed || [])
+  const [expandedStep, setExpandedStep] = useState<number | null>(0)
   const [notes, setNotes] = useState(ec.notes || '')
   const [resolution, setResolution] = useState('')
   const [saving, setSaving] = useState(false)
+  const [orderOutcomes, setOrderOutcomes] = useState<Record<string, string>>({})
 
   const baker = bakers.find(b => b.id === ec.baker_id) || ec.bakers
   const affectedOrders = orders.filter(o => o.baker_id === ec.baker_id && ['pending','confirmed','in_progress'].includes(o.status))
@@ -632,22 +625,22 @@ function EmergencyCase({ emergencyCase: ec, bakers, orders, onResolve }: { emerg
     const days = Math.round((new Date(y,m-1,d).getTime() - Date.now()) / 86400000)
     return days <= 3 && days >= 0
   })
-
-  const STEPS = [
-    'Contact baker by email or phone',
-    'Assess all affected orders',
-    'Notify critical orders (event within 72hrs)',
-    'Notify all other affected customers',
-    'Decide outcome for each order',
-    'Log resolution notes',
-  ]
-
   const hoursOpen = Math.floor((Date.now() - new Date(ec.created_at).getTime()) / 3600000)
 
-  async function toggleStep(step: string) {
-    const updated = steps.includes(step) ? steps.filter(s => s !== step) : [...steps, step]
+  const STEPS = [
+    { label: 'Contact baker by email or phone', key: 'contact_baker' },
+    { label: 'Assess all affected orders', key: 'assess_orders' },
+    { label: 'Notify critical orders (event within 72hrs)', key: 'notify_critical' },
+    { label: 'Notify all other affected customers', key: 'notify_others' },
+    { label: 'Decide outcome for each order', key: 'decide_outcomes' },
+    { label: 'Log resolution notes and close case', key: 'log_notes' },
+  ]
+
+  async function toggleStep(label: string, index: number) {
+    const updated = steps.includes(label) ? steps.filter(s => s !== label) : [...steps, label]
     setSteps(updated)
     await supabase.from('emergency_cases').update({ steps_completed: updated }).eq('id', ec.id)
+    if (!steps.includes(label)) setExpandedStep(index + 1 < STEPS.length ? index + 1 : null)
   }
 
   async function saveNotes() {
@@ -656,8 +649,22 @@ function EmergencyCase({ emergencyCase: ec, bakers, orders, onResolve }: { emerg
     setSaving(false)
   }
 
+  function customerEmailText(order: any) {
+    const isUrgent = (() => { const [y,m,d] = order.event_date.split('-').map(Number); return Math.round((new Date(y,m-1,d).getTime() - Date.now()) / 86400000) <= 3 })()
+    return 'Hi ' + order.customer_name + ',\n\nWe want to reach out about your upcoming ' + order.event_type + ' order with ' + baker?.business_name + '. Your baker has had an unexpected situation come up and we are personally reviewing your order to make sure everything is taken care of.\n\n' + (isUrgent ? 'We see your event is very soon. Please reply to this email immediately and we will prioritize your case.\n\n' : 'We will be in touch within 24 hours with an update.\n\n') + 'We are sorry for any concern this causes.\n\nWhiskly Support\nsupport@whiskly.co'
+  }
+
+  function getDaysUntil(dateStr: string) {
+    const [y,m,d] = dateStr.split('-').map(Number)
+    return Math.round((new Date(y,m-1,d).getTime() - Date.now()) / 86400000)
+  }
+
+  const allOutcomesSet = affectedOrders.length === 0 || affectedOrders.every(o => orderOutcomes[o.id])
+
   return (
     <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4" style={{ borderColor: '#dc2626' }}>
+
+      {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -666,70 +673,525 @@ function EmergencyCase({ emergencyCase: ec, bakers, orders, onResolve }: { emerg
             {hoursOpen < 24 && hoursOpen >= 4 && <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#f59e0b', color: 'white' }}>{hoursOpen}hrs open</span>}
             {criticalOrders.length > 0 && <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#dc2626', color: 'white' }}>{criticalOrders.length} CRITICAL</span>}
           </div>
-          <p className="text-xs" style={{ color: '#5c3d2e' }}>Opened {new Date(ec.created_at).toLocaleString()} · {baker?.city}, {baker?.state} · {baker?.email}</p>
+          <p className="text-xs" style={{ color: '#5c3d2e' }}>Opened {new Date(ec.created_at).toLocaleString()} · {baker?.city}, {baker?.state}</p>
         </div>
-        <span className="text-xs px-3 py-1.5 rounded-lg font-semibold flex-shrink-0" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>{steps.length}/{STEPS.length} steps</span>
+        <span className="text-xs px-3 py-1.5 rounded-lg font-semibold flex-shrink-0" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>{steps.length}/{STEPS.length} steps done</span>
       </div>
 
-      {affectedOrders.length > 0 && (
-        <div className="mb-5 p-4 rounded-xl" style={{ backgroundColor: '#fef2f2' }}>
-          <p className="text-xs font-bold mb-2" style={{ color: '#991b1b' }}>Affected Orders ({affectedOrders.length})</p>
-          <div className="flex flex-col gap-1.5">
-            {affectedOrders.map(o => {
-              const [y,m,d] = o.event_date.split('-').map(Number)
-              const days = Math.round((new Date(y,m-1,d).getTime() - Date.now()) / 86400000)
-              return (
-                <div key={o.id} className="flex items-center justify-between text-xs">
-                  <span style={{ color: '#2d1a0e' }}>{o.customer_name} · {o.event_type}</span>
-                  <span className="font-semibold" style={{ color: days <= 3 ? '#dc2626' : '#854d0e' }}>{days < 0 ? 'PAST' : days === 0 ? 'TODAY' : days + 'd away'}</span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
+      {/* Checklist */}
       <div className="mb-5">
-        <p className="text-xs font-bold mb-3" style={{ color: '#2d1a0e' }}>Resolution Checklist</p>
+        <p className="text-xs font-bold mb-3" style={{ color: '#2d1a0e' }}>Resolution Checklist — click each step to expand</p>
         <div className="flex flex-col gap-2">
-          {STEPS.map((step, i) => (
-            <button key={step} onClick={() => toggleStep(step)} className="flex items-center gap-3 text-left p-3 rounded-xl" style={{ backgroundColor: steps.includes(step) ? '#dcfce7' : '#faf8f6' }}>
-              <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(step) ? '#166534' : '#e0d5cc', color: 'white' }}>
-                {steps.includes(step) ? '✓' : i + 1}
-              </div>
-              <span className="text-xs font-medium" style={{ color: steps.includes(step) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(step) ? 'line-through' : 'none' }}>{step}</span>
+
+          {/* Step 1 — Contact Baker */}
+          <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[0].label) ? '#bbf7d0' : '#e0d5cc' }}>
+            <button onClick={() => setExpandedStep(expandedStep === 0 ? null : 0)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[0].label) ? '#dcfce7' : '#faf8f6' }}>
+              <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[0].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[0].label) ? '✓' : '1'}</div>
+              <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[0].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[0].label) ? 'line-through' : 'none' }}>{STEPS[0].label}</span>
+              <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 0 ? '▲' : '▼'}</span>
             </button>
-          ))}
-        </div>
-      </div>
-
-      {affectedOrders.length > 0 && (
-        <div className="mb-5 p-4 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
-          <p className="text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>Pre-drafted Customer Email</p>
-          <div className="p-3 rounded-lg text-xs leading-relaxed mb-2" style={{ backgroundColor: 'white', color: '#5c3d2e' }}>
-            <p className="font-semibold mb-1">Subject: Important update about your Whiskly order</p>
-            <p>Hi [Customer Name], we want to reach out about your upcoming order with {baker?.business_name}. Your baker has had an unexpected situation come up and we are personally reviewing your order to make sure everything is taken care of. We will be in touch within 24 hours. If your event is very soon, please reply immediately. — Whiskly Support, support@whiskly.co</p>
+            {expandedStep === 0 && (
+              <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                    <p className="text-xs font-bold mb-1" style={{ color: '#2d1a0e' }}>Baker Contact Info</p>
+                    <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>{baker?.business_name}</p>
+                    <p className="text-xs" style={{ color: '#5c3d2e' }}>{baker?.email}</p>
+                    <p className="text-xs" style={{ color: '#5c3d2e' }}>{baker?.city}, {baker?.state}</p>
+                  </div>
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                    <p className="text-xs font-bold mb-1" style={{ color: '#2d1a0e' }}>What to ask</p>
+                    <p className="text-xs" style={{ color: '#5c3d2e' }}>What is the situation? What is your expected timeline? Can you still fulfill any existing orders?</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <a href={'mailto:' + baker?.email + '?subject=Whiskly%20Emergency%20Pause%20Check-in&body=Hi%20' + encodeURIComponent(baker?.business_name || '') + '%2C%0A%0AWe%20received%20your%20emergency%20pause%20request.%20We%20want%20to%20check%20in%20and%20understand%20the%20situation%20so%20we%20can%20support%20you%20and%20your%20customers.%0A%0APlease%20reply%20as%20soon%20as%20possible.%0A%0AWhiskly%20Support'}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>
+                    Open Email Draft
+                  </a>
+                  <button onClick={() => navigator.clipboard.writeText(baker?.email || '')} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Copy Email</button>
+                </div>
+                <button onClick={() => toggleStep(STEPS[0].label, 0)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start" style={{ backgroundColor: '#166534' }}>Mark Done — Baker Contacted</button>
+              </div>
+            )}
           </div>
-          <button onClick={() => navigator.clipboard.writeText('Hi [Customer Name],\n\nWe want to reach out about your upcoming order with ' + baker?.business_name + '. Your baker has had an unexpected situation and we are personally reviewing your order.\n\nWe will be in touch within 24 hours. If your event is very soon, please reply to this email immediately.\n\nWhiskly Support\nsupport@whiskly.co')} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Copy Email</button>
-        </div>
-      )}
 
-      <div className="mb-5">
-        <label className="block text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>Internal Notes</label>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} rows={3} placeholder="Document situation, communications, and decisions here..." className="w-full px-3 py-2 rounded-xl border text-xs resize-none" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-        {saving && <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>Saving...</p>}
+          {/* Step 2 — Assess Orders */}
+          <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[1].label) ? '#bbf7d0' : '#e0d5cc' }}>
+            <button onClick={() => setExpandedStep(expandedStep === 1 ? null : 1)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[1].label) ? '#dcfce7' : '#faf8f6' }}>
+              <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[1].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[1].label) ? '✓' : '2'}</div>
+              <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[1].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[1].label) ? 'line-through' : 'none' }}>{STEPS[1].label}</span>
+              <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 1 ? '▲' : '▼'}</span>
+            </button>
+            {expandedStep === 1 && (
+              <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+                {affectedOrders.length === 0 ? (
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>No active orders found for this baker.</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {affectedOrders.map(o => {
+                      const days = getDaysUntil(o.event_date)
+                      const urgent = days <= 3 && days >= 0
+                      return (
+                        <div key={o.id} className="p-3 rounded-xl" style={{ backgroundColor: urgent ? '#fef2f2' : '#f5f0eb' }}>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-xs font-bold" style={{ color: '#2d1a0e' }}>{o.customer_name}</p>
+                            <span className="text-xs font-bold" style={{ color: urgent ? '#dc2626' : '#854d0e' }}>{days < 0 ? 'PAST' : days === 0 ? 'TODAY' : days + 'd away'}{urgent ? ' — CRITICAL' : ''}</span>
+                          </div>
+                          <p className="text-xs" style={{ color: '#5c3d2e' }}>{o.event_type} · {o.event_date} · ${o.budget}</p>
+                          <p className="text-xs" style={{ color: '#5c3d2e' }}>{o.customer_email}</p>
+                          <p className="text-xs mt-1 font-semibold" style={{ color: '#8B4513' }}>Status: {o.status} · Deposit: {o.deposit_paid_at ? 'Paid' : 'Unpaid'}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#fef9c3' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: '#854d0e' }}>What to consider</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>Which orders are most urgent? Which have deposits paid? Which customers need immediate contact? Sort by event date — closest first.</p>
+                </div>
+                <button onClick={() => toggleStep(STEPS[1].label, 1)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start" style={{ backgroundColor: '#166534' }}>Mark Done — Orders Assessed</button>
+              </div>
+            )}
+          </div>
+
+          {/* Step 3 — Notify Critical */}
+          <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[2].label) ? '#bbf7d0' : '#e0d5cc' }}>
+            <button onClick={() => setExpandedStep(expandedStep === 2 ? null : 2)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[2].label) ? '#dcfce7' : '#faf8f6' }}>
+              <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[2].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[2].label) ? '✓' : '3'}</div>
+              <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[2].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[2].label) ? 'line-through' : 'none' }}>{STEPS[2].label}</span>
+              <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 2 ? '▲' : '▼'}</span>
+            </button>
+            {expandedStep === 2 && (
+              <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+                {criticalOrders.length === 0 ? (
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>No critical orders (event within 72hrs). Skip to next step.</p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <p className="text-xs font-bold" style={{ color: '#dc2626' }}>{criticalOrders.length} order{criticalOrders.length > 1 ? 's' : ''} with event within 72hrs — contact immediately</p>
+                    {criticalOrders.map(o => (
+                      <div key={o.id} className="p-3 rounded-xl border" style={{ backgroundColor: '#fef2f2', borderColor: '#fecaca' }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-bold" style={{ color: '#991b1b' }}>{o.customer_name} — {o.event_type} in {getDaysUntil(o.event_date)} day{getDaysUntil(o.event_date) !== 1 ? 's' : ''}</p>
+                          <a href={'mailto:' + o.customer_email + '?subject=' + encodeURIComponent('Urgent: Update about your Whiskly order') + '&body=' + encodeURIComponent(customerEmailText(o))}
+                            className="px-3 py-1 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#dc2626' }}>
+                            Open Email
+                          </a>
+                        </div>
+                        <p className="text-xs" style={{ color: '#5c3d2e' }}>{o.customer_email}</p>
+                        <button onClick={() => navigator.clipboard.writeText(customerEmailText(o))} className="mt-2 px-3 py-1 rounded-lg text-xs font-semibold border" style={{ borderColor: '#fecaca', color: '#991b1b' }}>Copy Email Text</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button onClick={() => toggleStep(STEPS[2].label, 2)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start" style={{ backgroundColor: '#166534' }}>Mark Done — Critical Customers Notified</button>
+              </div>
+            )}
+          </div>
+
+          {/* Step 4 — Notify Others */}
+          <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[3].label) ? '#bbf7d0' : '#e0d5cc' }}>
+            <button onClick={() => setExpandedStep(expandedStep === 3 ? null : 3)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[3].label) ? '#dcfce7' : '#faf8f6' }}>
+              <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[3].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[3].label) ? '✓' : '4'}</div>
+              <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[3].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[3].label) ? 'line-through' : 'none' }}>{STEPS[3].label}</span>
+              <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 3 ? '▲' : '▼'}</span>
+            </button>
+            {expandedStep === 3 && (
+              <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+                {affectedOrders.filter(o => getDaysUntil(o.event_date) > 3).length === 0 ? (
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>No non-critical orders to notify. Skip to next step.</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {affectedOrders.filter(o => getDaysUntil(o.event_date) > 3).map(o => (
+                      <div key={o.id} className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-xs font-bold" style={{ color: '#2d1a0e' }}>{o.customer_name} — {o.event_type} in {getDaysUntil(o.event_date)} days</p>
+                          <a href={'mailto:' + o.customer_email + '?subject=' + encodeURIComponent('Update about your Whiskly order') + '&body=' + encodeURIComponent(customerEmailText(o))}
+                            className="px-3 py-1 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#8B4513' }}>
+                            Open Email
+                          </a>
+                        </div>
+                        <p className="text-xs" style={{ color: '#5c3d2e' }}>{o.customer_email}</p>
+                        <button onClick={() => navigator.clipboard.writeText(customerEmailText(o))} className="mt-2 px-3 py-1 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Copy Email Text</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button onClick={() => toggleStep(STEPS[3].label, 3)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start" style={{ backgroundColor: '#166534' }}>Mark Done — All Customers Notified</button>
+              </div>
+            )}
+          </div>
+
+          {/* Step 5 — Decide Outcomes */}
+          <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[4].label) ? '#bbf7d0' : '#e0d5cc' }}>
+            <button onClick={() => setExpandedStep(expandedStep === 4 ? null : 4)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[4].label) ? '#dcfce7' : '#faf8f6' }}>
+              <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[4].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[4].label) ? '✓' : '5'}</div>
+              <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[4].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[4].label) ? 'line-through' : 'none' }}>{STEPS[4].label}</span>
+              <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 4 ? '▲' : '▼'}</span>
+            </button>
+            {expandedStep === 4 && (
+              <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+                <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>Set an outcome for each order:</p>
+                {affectedOrders.length === 0 ? (
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>No active orders to decide on.</p>
+                ) : affectedOrders.map(o => (
+                  <div key={o.id} className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                    <p className="text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>{o.customer_name} · {o.event_type} · {o.event_date}</p>
+                    <select value={orderOutcomes[o.id] || ''} onChange={e => setOrderOutcomes({ ...orderOutcomes, [o.id]: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border text-xs"
+                      style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }}>
+                      <option value="">Select outcome...</option>
+                      <option value="hold">Keep on hold — baker may still fulfill</option>
+                      <option value="refund">Issue refund and cancel order</option>
+                      <option value="replacement">Find replacement baker</option>
+                    </select>
+                    {orderOutcomes[o.id] === 'refund' && (
+                      <p className="text-xs mt-1.5 font-semibold" style={{ color: '#dc2626' }}>Go to Orders tab to issue refund for this order after closing case.</p>
+                    )}
+                    {orderOutcomes[o.id] === 'replacement' && (
+                      <p className="text-xs mt-1.5 font-semibold" style={{ color: '#8B4513' }}>Check Bakers tab for nearby bakers with matching specialties in {baker?.city}, {baker?.state}.</p>
+                    )}
+                  </div>
+                ))}
+                {!allOutcomesSet && affectedOrders.length > 0 && (
+                  <p className="text-xs" style={{ color: '#854d0e' }}>Set an outcome for every order before marking done.</p>
+                )}
+                <button onClick={() => allOutcomesSet && toggleStep(STEPS[4].label, 4)} disabled={!allOutcomesSet}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start"
+                  style={{ backgroundColor: '#166534', opacity: allOutcomesSet ? 1 : 0.4 }}>
+                  Mark Done — Outcomes Decided
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Step 6 — Log Notes */}
+          <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[5].label) ? '#bbf7d0' : '#e0d5cc' }}>
+            <button onClick={() => setExpandedStep(expandedStep === 5 ? null : 5)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[5].label) ? '#dcfce7' : '#faf8f6' }}>
+              <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[5].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[5].label) ? '✓' : '6'}</div>
+              <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[5].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[5].label) ? 'line-through' : 'none' }}>{STEPS[5].label}</span>
+              <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 5 ? '▲' : '▼'}</span>
+            </button>
+            {expandedStep === 5 && (
+              <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#fef9c3' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: '#854d0e' }}>What to document</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>What was the situation? When did you contact the baker and what did they say? What outcome was chosen for each order? Any follow-up needed?</p>
+                </div>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} rows={4}
+                  placeholder="e.g. Baker had a family emergency. Contacted via email at 3pm. Orders for Sarah J and Tom L held pending baker return. Order for Mike R refunded. Baker expects to return in 3 days."
+                  className="w-full px-3 py-2 rounded-xl border text-xs resize-none"
+                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                {saving && <p className="text-xs" style={{ color: '#5c3d2e' }}>Saving...</p>}
+                <button onClick={() => notes.trim().length > 20 && toggleStep(STEPS[5].label, 5)} disabled={notes.trim().length <= 20}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start"
+                  style={{ backgroundColor: '#166534', opacity: notes.trim().length > 20 ? 1 : 0.4 }}>
+                  Mark Done — Notes Logged
+                </button>
+              </div>
+            )}
+          </div>
+
+        </div>
       </div>
 
-      <div className="flex gap-3 flex-wrap">
-        <select value={resolution} onChange={e => setResolution(e.target.value)} className="flex-1 px-3 py-2 rounded-xl border text-xs min-w-48" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
-          <option value="">Select resolution...</option>
-          <option value="baker_returned">Baker returned — orders continue</option>
-          <option value="converted_vacation">Converted to vacation mode</option>
-          <option value="orders_refunded">All orders refunded</option>
-          <option value="baker_suspended">Baker suspended</option>
-          <option value="resolved_other">Resolved — other</option>
-        </select>
-        <button onClick={() => resolution && onResolve(ec.id, resolution)} disabled={!resolution} className="px-5 py-2 rounded-xl text-white text-xs font-semibold" style={{ backgroundColor: '#166534', opacity: !resolution ? 0.6 : 1 }}>Close Case</button>
+      {/* Resolution */}
+      <div className="pt-4 border-t" style={{ borderColor: '#e0d5cc' }}>
+        {steps.length < STEPS.length && (
+          <p className="text-xs font-semibold mb-3" style={{ color: '#854d0e' }}>
+            Complete all {STEPS.length} steps to close this case ({STEPS.length - steps.length} remaining)
+          </p>
+        )}
+        <div className="flex gap-3 flex-wrap">
+          <select value={resolution} onChange={e => setResolution(e.target.value)}
+            className="flex-1 px-3 py-2 rounded-xl border text-xs min-w-48"
+            style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
+            <option value="">Select resolution...</option>
+            <option value="baker_returned">Baker returned — orders continue</option>
+            <option value="converted_vacation">Converted to vacation mode</option>
+            <option value="orders_refunded">All orders refunded</option>
+            <option value="baker_suspended">Baker suspended</option>
+            <option value="resolved_other">Resolved — other</option>
+          </select>
+          <button
+            onClick={() => resolution && steps.length >= STEPS.length && onResolve(ec.id, resolution)}
+            disabled={!resolution || steps.length < STEPS.length}
+            className="px-5 py-2 rounded-xl text-white text-xs font-semibold"
+            style={{ backgroundColor: '#166534', opacity: (!resolution || steps.length < STEPS.length) ? 0.4 : 1 }}>
+            Close Case
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DisputeCase({ order, bakers, onResolve, onRefund }: { order: any, bakers: any[], onResolve: (orderId: string, outcome: string, strikeBaker: boolean) => void, onRefund: () => void }) {
+  const [expandedStep, setExpandedStep] = useState<number | null>(0)
+  const [steps, setSteps] = useState<string[]>([])
+  const [ruling, setRuling] = useState('')
+  const [strikeBaker, setStrikeBaker] = useState(false)
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const baker = bakers.find(b => b.id === order.baker_id) || order.bakers
+
+  const STEPS = [
+    { label: 'Review order details and evidence', key: 'review' },
+    { label: 'Contact both parties if needed', key: 'contact' },
+    { label: 'Make a ruling', key: 'ruling' },
+    { label: 'Take action and close dispute', key: 'close' },
+  ]
+
+  async function saveNotes() {
+    setSaving(true)
+    await supabase.from('orders').update({ dispute_notes: notes } as any).eq('id', order.id).then(() => setSaving(false))
+  }
+
+  function toggleStep(label: string, next: number) {
+    const updated = steps.includes(label) ? steps.filter(s => s !== label) : [...steps, label]
+    setSteps(updated)
+    if (!steps.includes(label)) setExpandedStep(next < STEPS.length ? next : null)
+  }
+
+  const RULING_OPTIONS = [
+    { value: 'customer', label: 'Rule for customer — full refund, baker may receive strike' },
+    { value: 'baker', label: 'Rule for baker — release payment, no refund' },
+    { value: 'partial', label: 'Split — partial refund, negotiate amount' },
+    { value: 'noop', label: 'No action needed — unlock order and continue' },
+  ]
+
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4" style={{ borderColor: '#dc2626' }}>
+      {/* Header */}
+      <div className="mb-5">
+        <p className="font-bold text-lg" style={{ color: '#2d1a0e' }}>{order.customer_name} vs {order.bakers?.business_name}</p>
+        <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>{order.event_type} · {order.event_date} · ${order.budget} · Order {order.id.slice(0, 8)}</p>
+        <div className="flex gap-2 mt-2 flex-wrap">
+          {order.deposit_paid_at && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>Deposit paid</span>}
+          {order.remainder_paid_at && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>Remainder paid</span>}
+          {order.is_disputed && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>Formal dispute</span>}
+          {order.is_flagged && !order.is_disputed && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#fff7ed', color: '#c2410c' }}>Flagged</span>}
+        </div>
+        <p className="text-xs mt-1 font-semibold" style={{ color: '#5c3d2e' }}>{steps.length}/{STEPS.length} steps done</p>
+      </div>
+
+      <div className="flex flex-col gap-2 mb-5">
+
+        {/* Step 1 — Review Evidence */}
+        <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[0].label) ? '#bbf7d0' : '#e0d5cc' }}>
+          <button onClick={() => setExpandedStep(expandedStep === 0 ? null : 0)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[0].label) ? '#dcfce7' : '#faf8f6' }}>
+            <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[0].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[0].label) ? '✓' : '1'}</div>
+            <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[0].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[0].label) ? 'line-through' : 'none' }}>{STEPS[0].label}</span>
+            <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 0 ? '▲' : '▼'}</span>
+          </button>
+          {expandedStep === 0 && (
+            <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                  <p className="text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>Order Details</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}><strong>Customer:</strong> {order.customer_name} · {order.customer_email}</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}><strong>Baker:</strong> {order.bakers?.business_name} · {baker?.email}</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}><strong>Event:</strong> {order.event_type} on {order.event_date}</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}><strong>Budget:</strong> ${order.budget}</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}><strong>Fulfillment:</strong> {order.fulfillment_type || 'Not specified'}</p>
+                  {order.item_description && <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}><strong>Description:</strong> {order.item_description}</p>}
+                  {order.allergen_notes && <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}><strong>Allergens:</strong> {order.allergen_notes}</p>}
+                </div>
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                  <p className="text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>Payment Status</p>
+                  <p className="text-xs" style={{ color: order.deposit_paid_at ? '#166534' : '#991b1b' }}>Deposit: {order.deposit_paid_at ? 'Paid on ' + new Date(order.deposit_paid_at).toLocaleDateString() : 'Not paid'}</p>
+                  <p className="text-xs" style={{ color: order.remainder_paid_at ? '#166534' : '#854d0e' }}>Remainder: {order.remainder_paid_at ? 'Paid on ' + new Date(order.remainder_paid_at).toLocaleDateString() : 'Not paid'}</p>
+                  {order.delivery_proof_url && (
+                    <div className="mt-2">
+                      <p className="text-xs font-bold mb-1" style={{ color: '#2d1a0e' }}>Delivery Photo</p>
+                      <a href={order.delivery_proof_url} target="_blank" rel="noopener noreferrer">
+                        <img src={order.delivery_proof_url} alt="Delivery proof" className="w-full h-24 object-cover rounded-lg" />
+                      </a>
+                    </div>
+                  )}
+                  {order.handoff_photo_url && (
+                    <div className="mt-2">
+                      <p className="text-xs font-bold mb-1" style={{ color: '#2d1a0e' }}>Handoff Photo</p>
+                      <a href={order.handoff_photo_url} target="_blank" rel="noopener noreferrer">
+                        <img src={order.handoff_photo_url} alt="Handoff proof" className="w-full h-24 object-cover rounded-lg" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {order.inspiration_photo_urls?.length > 0 && (
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                  <p className="text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>Inspiration Photos (what customer requested)</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {order.inspiration_photo_urls.map((url: string, i: number) => (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                        <img src={url} alt={'Inspiration ' + (i+1)} className="w-20 h-20 object-cover rounded-lg border" style={{ borderColor: '#e0d5cc' }} />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="p-3 rounded-xl" style={{ backgroundColor: '#fef9c3' }}>
+                <p className="text-xs font-bold mb-1" style={{ color: '#854d0e' }}>What to look for</p>
+                <p className="text-xs" style={{ color: '#5c3d2e' }}>Does the delivery photo match the order description and inspiration photos? Was the order delivered? Was it on time? Is there any communication in messages that supports either side?</p>
+              </div>
+              <button onClick={() => toggleStep(STEPS[0].label, 1)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start" style={{ backgroundColor: '#166534' }}>Mark Done — Evidence Reviewed</button>
+            </div>
+          )}
+        </div>
+
+        {/* Step 2 — Contact Parties */}
+        <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[1].label) ? '#bbf7d0' : '#e0d5cc' }}>
+          <button onClick={() => setExpandedStep(expandedStep === 1 ? null : 1)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[1].label) ? '#dcfce7' : '#faf8f6' }}>
+            <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[1].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[1].label) ? '✓' : '2'}</div>
+            <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[1].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[1].label) ? 'line-through' : 'none' }}>{STEPS[1].label}</span>
+            <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 1 ? '▲' : '▼'}</span>
+          </button>
+          {expandedStep === 1 && (
+            <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                  <p className="text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>Contact Customer</p>
+                  <p className="text-xs mb-2" style={{ color: '#5c3d2e' }}>{order.customer_name} · {order.customer_email}</p>
+                  <a href={'mailto:' + order.customer_email + '?subject=' + encodeURIComponent('Whiskly Dispute Update — Order ' + order.id.slice(0,8)) + '&body=' + encodeURIComponent('Hi ' + order.customer_name + ',\n\nWe are reviewing your dispute for your ' + order.event_type + ' order with ' + order.bakers?.business_name + '. We may have a few questions as we investigate.\n\nCould you please share any additional details about your concern?\n\nWhiskly Support\nsupport@whiskly.co')}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white inline-block" style={{ backgroundColor: '#2d1a0e' }}>
+                    Email Customer
+                  </a>
+                </div>
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                  <p className="text-xs font-bold mb-2" style={{ color: '#2d1a0e' }}>Contact Baker</p>
+                  <p className="text-xs mb-2" style={{ color: '#5c3d2e' }}>{order.bakers?.business_name} · {baker?.email}</p>
+                  <a href={'mailto:' + baker?.email + '?subject=' + encodeURIComponent('Whiskly Dispute — Order ' + order.id.slice(0,8)) + '&body=' + encodeURIComponent('Hi ' + order.bakers?.business_name + ',\n\nWe have received a dispute on order ' + order.id.slice(0,8) + ' for a ' + order.event_type + ' on ' + order.event_date + '. We are reviewing the situation and may have a few questions.\n\nCould you please share your side of the situation?\n\nWhiskly Support\nsupport@whiskly.co')}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white inline-block" style={{ backgroundColor: '#8B4513' }}>
+                    Email Baker
+                  </a>
+                </div>
+              </div>
+              <div className="p-3 rounded-xl" style={{ backgroundColor: '#fef9c3' }}>
+                <p className="text-xs font-bold mb-1" style={{ color: '#854d0e' }}>This step is optional</p>
+                <p className="text-xs" style={{ color: '#5c3d2e' }}>Only contact parties if the evidence is unclear. For straightforward cases (no delivery photo, clear no-show, etc.) you can skip directly to making a ruling.</p>
+              </div>
+              <button onClick={() => toggleStep(STEPS[1].label, 2)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start" style={{ backgroundColor: '#166534' }}>Mark Done — Parties Contacted</button>
+            </div>
+          )}
+        </div>
+
+        {/* Step 3 — Make Ruling */}
+        <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[2].label) ? '#bbf7d0' : '#e0d5cc' }}>
+          <button onClick={() => setExpandedStep(expandedStep === 2 ? null : 2)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[2].label) ? '#dcfce7' : '#faf8f6' }}>
+            <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[2].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[2].label) ? '✓' : '3'}</div>
+            <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[2].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[2].label) ? 'line-through' : 'none' }}>{STEPS[2].label}</span>
+            <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 2 ? '▲' : '▼'}</span>
+          </button>
+          {expandedStep === 2 && (
+            <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+              <div className="flex flex-col gap-2">
+                {RULING_OPTIONS.map(opt => (
+                  <button key={opt.value} onClick={() => setRuling(opt.value)}
+                    className="flex items-center gap-3 p-3 rounded-xl text-left border"
+                    style={{ borderColor: ruling === opt.value ? '#2d1a0e' : '#e0d5cc', backgroundColor: ruling === opt.value ? '#2d1a0e' : '#faf8f6' }}>
+                    <div className="w-4 h-4 rounded-full border-2 flex-shrink-0" style={{ borderColor: ruling === opt.value ? 'white' : '#e0d5cc', backgroundColor: ruling === opt.value ? 'white' : 'transparent' }} />
+                    <span className="text-xs font-medium" style={{ color: ruling === opt.value ? 'white' : '#2d1a0e' }}>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+              {ruling === 'customer' && (
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#fef2f2' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: '#991b1b' }}>Ruling for customer</p>
+                  <p className="text-xs mb-2" style={{ color: '#5c3d2e' }}>A refund will be issued and the order closed. You can also issue a strike to the baker if this was due to their fault.</p>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={strikeBaker} onChange={e => setStrikeBaker(e.target.checked)} />
+                    <span className="text-xs font-semibold" style={{ color: '#991b1b' }}>Issue a strike to the baker</span>
+                  </label>
+                </div>
+              )}
+              {ruling === 'baker' && (
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#dcfce7' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: '#166534' }}>Ruling for baker</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>The order will be marked complete. No refund issued. Payment already released to baker via Stripe Connect.</p>
+                </div>
+              )}
+              {ruling === 'partial' && (
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#fef9c3' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: '#854d0e' }}>Split ruling</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>Issue a partial refund manually in Stripe dashboard, then mark resolved here. Note the amount in your internal notes.</p>
+                </div>
+              )}
+              {ruling === 'noop' && (
+                <div className="p-3 rounded-xl" style={{ backgroundColor: '#dbeafe' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: '#1e40af' }}>No action needed</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>The dispute flag will be removed and the order will be unlocked for both parties to continue.</p>
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-bold mb-1" style={{ color: '#2d1a0e' }}>Internal Notes</label>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} rows={3}
+                  placeholder="e.g. No delivery photo found. Baker could not confirm delivery. Customer claims order never arrived. Ruled for customer."
+                  className="w-full px-3 py-2 rounded-xl border text-xs resize-none"
+                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                {saving && <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>Saving...</p>}
+              </div>
+              <button onClick={() => ruling && notes.trim().length > 10 && toggleStep(STEPS[2].label, 3)}
+                disabled={!ruling || notes.trim().length <= 10}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start"
+                style={{ backgroundColor: '#166534', opacity: (!ruling || notes.trim().length <= 10) ? 0.4 : 1 }}>
+                {!ruling ? 'Select a ruling first' : notes.trim().length <= 10 ? 'Add notes before continuing' : 'Mark Done — Ruling Made'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Step 4 — Take Action */}
+        <div className="rounded-xl overflow-hidden border" style={{ borderColor: steps.includes(STEPS[3].label) ? '#bbf7d0' : '#e0d5cc' }}>
+          <button onClick={() => setExpandedStep(expandedStep === 3 ? null : 3)} className="w-full flex items-center gap-3 p-3 text-left" style={{ backgroundColor: steps.includes(STEPS[3].label) ? '#dcfce7' : '#faf8f6' }}>
+            <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold" style={{ backgroundColor: steps.includes(STEPS[3].label) ? '#166534' : '#e0d5cc', color: 'white' }}>{steps.includes(STEPS[3].label) ? '✓' : '4'}</div>
+            <span className="text-xs font-medium flex-1" style={{ color: steps.includes(STEPS[3].label) ? '#166534' : '#2d1a0e', textDecoration: steps.includes(STEPS[3].label) ? 'line-through' : 'none' }}>{STEPS[3].label}</span>
+            <span className="text-xs" style={{ color: '#9c7b6b' }}>{expandedStep === 3 ? '▲' : '▼'}</span>
+          </button>
+          {expandedStep === 3 && (
+            <div className="p-4 border-t flex flex-col gap-3" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+              {!ruling && <p className="text-xs font-semibold" style={{ color: '#854d0e' }}>Complete the ruling step first.</p>}
+              {ruling && (
+                <>
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                    <p className="text-xs font-bold mb-1" style={{ color: '#2d1a0e' }}>Actions to take for this ruling:</p>
+                    {ruling === 'customer' && <p className="text-xs" style={{ color: '#5c3d2e' }}>1. Click Issue Refund below. 2. Email customer confirming refund. 3. Email baker with decision. 4. Click Close Dispute.</p>}
+                    {ruling === 'baker' && <p className="text-xs" style={{ color: '#5c3d2e' }}>1. Email customer with decision. 2. Email baker confirming ruling. 3. Click Close Dispute.</p>}
+                    {ruling === 'partial' && <p className="text-xs" style={{ color: '#5c3d2e' }}>1. Issue partial refund in Stripe dashboard manually. 2. Email both parties with decision and refund amount. 3. Click Close Dispute.</p>}
+                    {ruling === 'noop' && <p className="text-xs" style={{ color: '#5c3d2e' }}>1. Email both parties that the dispute has been reviewed and no action was needed. 2. Click Close Dispute.</p>}
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {(ruling === 'customer') && order.deposit_paid_at && (
+                      <button onClick={onRefund} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Issue Refund via Stripe</button>
+                    )}
+                    <a href={'mailto:' + order.customer_email + '?subject=' + encodeURIComponent('Whiskly Dispute Resolution — Order ' + order.id.slice(0,8)) + '&body=' + encodeURIComponent(
+                      ruling === 'customer' ? 'Hi ' + order.customer_name + ',\n\nWe have completed our review of your dispute for order ' + order.id.slice(0,8) + '. We are ruling in your favor and a full refund has been issued. Please allow 5-10 business days.\n\nWhiskly Support'
+                      : ruling === 'baker' ? 'Hi ' + order.customer_name + ',\n\nWe have completed our review of your dispute for order ' + order.id.slice(0,8) + '. After reviewing the evidence we are unable to issue a refund at this time. If you have further questions please reply to this email.\n\nWhiskly Support'
+                      : 'Hi ' + order.customer_name + ',\n\nWe have completed our review of your dispute for order ' + order.id.slice(0,8) + '. We have made a decision and will be in touch shortly.\n\nWhiskly Support'
+                    )} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>
+                      Email Customer Decision
+                    </a>
+                    <a href={'mailto:' + baker?.email + '?subject=' + encodeURIComponent('Whiskly Dispute Resolution — Order ' + order.id.slice(0,8)) + '&body=' + encodeURIComponent(
+                      ruling === 'customer' ? 'Hi ' + order.bakers?.business_name + ',\n\nWe have completed our review of the dispute on order ' + order.id.slice(0,8) + '. We have ruled in the customer\'s favor and issued a refund. If you believe this decision is incorrect please reply within 7 days.\n\nWhiskly Support'
+                      : ruling === 'baker' ? 'Hi ' + order.bakers?.business_name + ',\n\nWe have completed our review of the dispute on order ' + order.id.slice(0,8) + '. We have ruled in your favor.\n\nWhiskly Support'
+                      : 'Hi ' + order.bakers?.business_name + ',\n\nWe have completed our review of the dispute on order ' + order.id.slice(0,8) + '. We have made a decision and will be in touch shortly.\n\nWhiskly Support'
+                    )} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#8B4513', color: '#8B4513' }}>
+                      Email Baker Decision
+                    </a>
+                  </div>
+                  <button onClick={() => {
+                    toggleStep(STEPS[3].label, 4)
+                    onResolve(order.id, ruling === 'customer' ? 'refund' : 'complete', strikeBaker)
+                  }} className="px-5 py-2 rounded-lg text-xs font-semibold text-white self-start" style={{ backgroundColor: '#166534' }}>
+                    Close Dispute
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   )
