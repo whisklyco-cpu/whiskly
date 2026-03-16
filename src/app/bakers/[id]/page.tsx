@@ -323,6 +323,32 @@ export default function BakerProfile() {
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
       <Navbar />
 
+      {/* Baker availability banners */}
+{(baker.is_on_vacation || baker.is_at_capacity || baker.is_emergency_pause) && (
+  <div className="max-w-5xl mx-auto px-4 md:px-6 pt-6">
+    {baker.is_emergency_pause && (
+      <div className="rounded-2xl px-5 py-4 mb-4" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca' }}>
+        <p className="font-bold text-sm" style={{ color: '#991b1b' }}>This baker is temporarily unavailable</p>
+        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>They have had an unexpected situation. Check back soon or browse other bakers.</p>
+      </div>
+    )}
+    {baker.is_on_vacation && !baker.is_emergency_pause && (
+      <div className="rounded-2xl px-5 py-4 mb-4" style={{ backgroundColor: '#dbeafe', border: '1px solid #bfdbfe' }}>
+        <p className="font-bold text-sm" style={{ color: '#1e40af' }}>This baker is on vacation</p>
+        <p className="text-xs mt-0.5" style={{ color: '#1e40af' }}>
+          {baker.vacation_return_date ? 'Back on ' + new Date(baker.vacation_return_date + 'T00:00:00').toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' }) : 'Check back soon'}
+        </p>
+      </div>
+    )}
+    {baker.is_at_capacity && !baker.is_on_vacation && !baker.is_emergency_pause && (
+      <div className="rounded-2xl px-5 py-4 mb-4" style={{ backgroundColor: '#fef9c3', border: '1px solid #fde68a' }}>
+        <p className="font-bold text-sm" style={{ color: '#854d0e' }}>This baker is currently at capacity</p>
+        <p className="text-xs mt-0.5" style={{ color: '#92400e' }}>They are not taking new orders right now. Save them to find them easily when they are available again.</p>
+      </div>
+    )}
+  </div>
+)}
+
       {/* Message Modal */}
       {showMessageModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
@@ -753,7 +779,13 @@ export default function BakerProfile() {
                       <p className="text-xs mt-1.5 leading-relaxed" style={{ color: '#5c3d2e' }}>Baker uses photos for inspiration only — not exact replicas.</p>
                     </div>
 
-                    <button onClick={handleSubmit} disabled={submitting}
+                    {(baker.is_on_vacation || baker.is_at_capacity || baker.is_emergency_pause) && (
+  <div className="px-4 py-3 rounded-xl text-xs font-semibold text-center" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>
+    {baker.is_emergency_pause ? 'This baker is temporarily unavailable' : baker.is_on_vacation ? 'This baker is on vacation until ' + (baker.vacation_return_date ? new Date(baker.vacation_return_date + 'T00:00:00').toLocaleDateString([], { month: 'long', day: 'numeric' }) : 'further notice') : 'This baker is not accepting new orders right now'}
+  </div>
+)}
+
+                    <button onClick={handleSubmit} disabled={submitting || baker.is_on_vacation || baker.is_at_capacity || baker.is_emergency_pause}
                       className="w-full py-3 rounded-xl text-white font-semibold text-sm mt-1"
                       style={{ backgroundColor: '#2d1a0e', opacity: submitting ? 0.7 : 1 }}>
                       {submitting ? 'Sending...' : 'Start Your Order with ' + baker.business_name}

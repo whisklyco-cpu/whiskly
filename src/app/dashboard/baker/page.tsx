@@ -31,6 +31,11 @@ export default function BakerDashboard() {
   const [zipCode, setZipCode] = useState('')
   const [startingPrice, setStartingPrice] = useState('')
   const [leadTime, setLeadTime] = useState('7')
+  const [isOnVacation, setIsOnVacation] = useState(false)
+  const [vacationReturnDate, setVacationReturnDate] = useState('')
+  const [isAtCapacity, setIsAtCapacity] = useState(false)
+  const [isEmergencyPause, setIsEmergencyPause] = useState(false)
+  const [savingStatus, setSavingStatus] = useState(false)
 
   useEffect(() => {
     loadDashboard()
@@ -69,6 +74,10 @@ export default function BakerDashboard() {
       setZipCode(bakerData.zip_code || '')
       setStartingPrice(bakerData.starting_price?.toString() || '')
       setLeadTime(bakerData.lead_time_days?.toString() || '7')
+      setIsOnVacation(bakerData.is_on_vacation || false)
+      setVacationReturnDate(bakerData.vacation_return_date || '')
+      setIsAtCapacity(bakerData.is_at_capacity || false)
+      setIsEmergencyPause(bakerData.is_emergency_pause || false)
       const { data: ordersData } = await supabase.from('orders').select('*, inspiration_photo_urls').eq('baker_id', bakerData.id).order('created_at', { ascending: false })
       setOrders((ordersData || []).map(o => ({ ...o, inspiration_photo_urls: o.inspiration_photo_urls || [] })))
       const { data: portfolioData } = await supabase.from('portfolio_items').select('*').eq('baker_id', bakerData.id).order('created_at', { ascending: false })
@@ -198,6 +207,49 @@ export default function BakerDashboard() {
     </div>
   )
 
+async function saveAvailabilityStatus(updates: any) {
+  setSavingStatus(true)
+  await supabase.from('bakers').update(updates).eq('id', baker.id)
+  setBaker({ ...baker, ...updates })
+  setSavingStatus(false)
+}
+
+async function triggerEmergencyPause() {
+  if (!confirm('This will pause all new orders and alert our team immediately. Use only for genuine emergencies. Continue?')) return
+  const now = new Date().toISOString()
+  const newCount = (baker.emergency_pause_count || 0) + 1
+  await supabase.from('bakers').update({
+    is_emergency_pause: true,
+    emergency_pause_at: now,
+    emergency_pause_count: newCount,
+    last_emergency_pause_at: now,
+  }).eq('id', baker.id)
+
+  // Create emergency case
+  await supabase.from('emergency_cases').insert({
+    baker_id: baker.id,
+    status: 'open',
+    notes: 'Baker initiated emergency pause at ' + now,
+  })
+
+  // Notify admin via email
+  await fetch('/api/email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'announcement',
+      to: 'support@whiskly.co',
+      name: 'Whiskly Admin',
+      subject: '[EMERGENCY] Baker pause — ' + baker.business_name,
+      body: baker.business_name + ' has initiated an emergency pause at ' + new Date(now).toLocaleString() + '.\n\nPlease review immediately in the admin panel.\n\nAffected baker ID: ' + baker.id,
+    })
+  }).catch(() => {})
+
+  setIsEmergencyPause(true)
+  setBaker({ ...baker, is_emergency_pause: true, emergency_pause_at: now })
+  alert('Emergency pause activated. Our team has been notified and will be in touch shortly.')
+}
+
   const pending = orders.filter(o => o.status === 'pending')
   const countered = orders.filter(o => o.status === 'countered')
   const confirmed = orders.filter(o => o.status === 'confirmed')
@@ -274,12 +326,18 @@ export default function BakerDashboard() {
                 {order.fulfillment_type ? ' · ' + (order.fulfillment_type === 'delivery' ? 'Delivery' : 'Pickup') : ''}
               </p>
               {(() => {
-                const daysUntil = getDaysUntil(order.event_date)
-                const bakerLeadTime = baker?.lead_time_days || 7
-                const isRush = daysUntil >= 0 && daysUntil < bakerLeadTime
-                if (!isRush) return null
-                return <p className="text-xs font-semibold mt-1 px-2 py-0.5 rounded-full inline-block" style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Rush order — {daysUntil === 0 ? 'event is today' : daysUntil === 1 ? 'event is tomorrow' : 'event in ' + daysUntil + ' days'}</p>
-              })()}
+  const daysUntil = getDaysUntil(order.event_date)
+  const bakerLeadTime = baker?.lead_time_days || 7
+  const isRush = daysUntil >= 0 && daysUntil < bakerLeadTime
+  const isEventPassed = daysUntil < 0 && order.status === 'pending'
+  const isOverdue = daysUntil < 0 && order.status !== 'complete' && order.status !== 'declined'
+  const isPendingTooLong = order.status === 'pending' && ((Date.now() - new Date(order.created_at).getTime()) / 3600000) > 48
+  if (isEventPassed) return <p className="text-xs font-semibold mt-1 px-2 py-0.5 rounded-full inline-block" style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>Event passed — respond immediately</p>
+  if (isOverdue) return <p className="text-xs font-semibold mt-1 px-2 py-0.5 rounded-full inline-block" style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>Event date passed</p>
+  if (isPendingTooLong) return <p className="text-xs font-semibold mt-1 px-2 py-0.5 rounded-full inline-block" style={{ backgroundColor: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a' }}>Awaiting your response for 48hrs</p>
+  if (isRush) return <p className="text-xs font-semibold mt-1 px-2 py-0.5 rounded-full inline-block" style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Rush order — {daysUntil === 0 ? 'event is today' : daysUntil === 1 ? 'event is tomorrow' : 'event in ' + daysUntil + ' days'}</p>
+  return null
+})()}
             </div>
           </div>
           <span className="text-xs flex-shrink-0" style={{ color: '#5c3d2e' }}>{expanded ? '▲' : '▼'}</span>
@@ -654,6 +712,82 @@ export default function BakerDashboard() {
                   <input value={baker?.pickup_address || ''} onChange={e => setBaker({ ...baker, pickup_address: e.target.value })} placeholder="123 Baker St, Upper Marlboro, MD 20774" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                 </div>
               )}
+
+{/* Availability Status */}
+<div className="border-t pt-5" style={{ borderColor: '#e0d5cc' }}>
+  <label className="block text-sm font-semibold mb-3" style={{ color: '#2d1a0e' }}>Availability Status</label>
+
+  {/* Vacation Mode */}
+  <div className="p-4 rounded-xl border mb-3" style={{ borderColor: '#e0d5cc', backgroundColor: isOnVacation ? '#dbeafe' : '#faf8f6' }}>
+    <div className="flex items-center justify-between mb-2">
+      <div>
+        <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>Vacation Mode</p>
+        <p className="text-xs" style={{ color: '#5c3d2e' }}>Pause new orders while you are away</p>
+      </div>
+      <button onClick={async () => {
+        const newVal = !isOnVacation
+        setIsOnVacation(newVal)
+        await saveAvailabilityStatus({ is_on_vacation: newVal, vacation_return_date: newVal ? vacationReturnDate : null })
+      }} className="w-10 h-6 rounded-full relative flex-shrink-0 transition-all"
+        style={{ backgroundColor: isOnVacation ? '#1e40af' : '#e0d5cc' }}>
+        <div className="w-4 h-4 bg-white rounded-full absolute top-1 transition-all" style={{ left: isOnVacation ? '22px' : '4px' }} />
+      </button>
+    </div>
+    {isOnVacation && (
+      <div className="mt-2">
+        <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Return Date</label>
+        <input type="date" value={vacationReturnDate} onChange={async e => {
+          setVacationReturnDate(e.target.value)
+          await saveAvailabilityStatus({ is_on_vacation: true, vacation_return_date: e.target.value })
+        }} className="w-full px-3 py-2 rounded-lg border text-sm"
+          style={{ borderColor: '#bfdbfe', color: '#2d1a0e', backgroundColor: 'white' }} />
+      </div>
+    )}
+  </div>
+
+  {/* At Capacity */}
+  <div className="p-4 rounded-xl border mb-3" style={{ borderColor: '#e0d5cc', backgroundColor: isAtCapacity ? '#fef9c3' : '#faf8f6' }}>
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>At Capacity</p>
+        <p className="text-xs" style={{ color: '#5c3d2e' }}>Let customers know you are fully booked</p>
+      </div>
+      <button onClick={async () => {
+        const newVal = !isAtCapacity
+        setIsAtCapacity(newVal)
+        await saveAvailabilityStatus({ is_at_capacity: newVal })
+      }} className="w-10 h-6 rounded-full relative flex-shrink-0 transition-all"
+        style={{ backgroundColor: isAtCapacity ? '#854d0e' : '#e0d5cc' }}>
+        <div className="w-4 h-4 bg-white rounded-full absolute top-1 transition-all" style={{ left: isAtCapacity ? '22px' : '4px' }} />
+      </button>
+    </div>
+  </div>
+
+  {/* Emergency Pause */}
+  {!isEmergencyPause ? (
+    <div className="p-4 rounded-xl border" style={{ borderColor: '#fecaca', backgroundColor: '#fef2f2' }}>
+      <p className="text-sm font-semibold mb-1" style={{ color: '#991b1b' }}>Emergency Pause</p>
+      <p className="text-xs mb-3" style={{ color: '#5c3d2e' }}>For genuine emergencies only — death in family, medical emergency, major home emergency. Immediately notifies our team. No strikes issued.</p>
+      <button onClick={triggerEmergencyPause}
+        className="px-4 py-2 rounded-lg text-xs font-semibold border"
+        style={{ borderColor: '#dc2626', color: '#dc2626' }}>
+        Trigger Emergency Pause
+      </button>
+    </div>
+  ) : (
+    <div className="p-4 rounded-xl border" style={{ borderColor: '#dc2626', backgroundColor: '#fef2f2' }}>
+      <p className="text-sm font-bold mb-1" style={{ color: '#991b1b' }}>Emergency Pause Active</p>
+      <p className="text-xs mb-3" style={{ color: '#5c3d2e' }}>Our team has been notified and is reviewing your affected orders. We will be in touch shortly.</p>
+      <button onClick={async () => {
+        await saveAvailabilityStatus({ is_emergency_pause: false })
+        setIsEmergencyPause(false)
+      }} className="px-4 py-2 rounded-lg text-xs font-semibold text-white"
+        style={{ backgroundColor: '#166534' }}>
+        I am back — Resume Orders
+      </button>
+    </div>
+  )}
+</div>
 
               <button onClick={saveProfile} disabled={saving} className="py-3 rounded-lg text-white font-semibold" style={{ backgroundColor: '#2d1a0e', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving...' : 'Save Profile'}</button>
             </div>
