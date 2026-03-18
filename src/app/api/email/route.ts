@@ -253,6 +253,38 @@ export async function POST(req: Request) {
       })
     }
 
+    // ─── Deposit Nudge ────────────────────────────────────────────────────────
+    if (type === 'deposit_nudge') {
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `Action required: pay your deposit to confirm with ${bakerName}`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Your Baker Has Accepted</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, <strong>${bakerName}</strong> has accepted your request.
+            To secure your booking, your 50% deposit is due now.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px;">
+            ${detailTable([
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              { label: 'Baker', value: bakerName },
+              { label: 'Total Budget', value: `$${budget}` },
+              { label: 'Deposit Due', value: `$${Math.round(budget / 2)}` },
+            ])}
+          </div>
+          <div style="margin-top: 24px;">
+            ${ctaButton('Pay Deposit Now', `${BASE_URL}/dashboard/customer`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            Your booking is not confirmed until your deposit is received.
+            If you have questions, reply to your baker in the Whiskly messages tab.
+          </p>
+        `)
+      })
+    }
+
     return NextResponse.json({ success: true })
   } catch (err: any) {
     console.error('Email error:', err.message)

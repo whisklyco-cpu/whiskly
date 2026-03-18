@@ -31,11 +31,14 @@ export default function BakerDashboard() {
   const [zipCode, setZipCode] = useState('')
   const [startingPrice, setStartingPrice] = useState('')
   const [leadTime, setLeadTime] = useState('7')
+  const [phone, setPhone] = useState('')
   const [isOnVacation, setIsOnVacation] = useState(false)
   const [vacationReturnDate, setVacationReturnDate] = useState('')
   const [isAtCapacity, setIsAtCapacity] = useState(false)
   const [isEmergencyPause, setIsEmergencyPause] = useState(false)
   const [savingStatus, setSavingStatus] = useState(false)
+  const [isEmergencyRoster, setIsEmergencyRoster] = useState(false)
+  const [emergencyWindows, setEmergencyWindows] = useState<string[]>([])
 
   useEffect(() => {
     loadDashboard()
@@ -74,10 +77,13 @@ export default function BakerDashboard() {
       setZipCode(bakerData.zip_code || '')
       setStartingPrice(bakerData.starting_price?.toString() || '')
       setLeadTime(bakerData.lead_time_days?.toString() || '7')
+      setPhone(bakerData.phone || '')
       setIsOnVacation(bakerData.is_on_vacation || false)
       setVacationReturnDate(bakerData.vacation_return_date || '')
       setIsAtCapacity(bakerData.is_at_capacity || false)
       setIsEmergencyPause(bakerData.is_emergency_pause || false)
+      setIsEmergencyRoster(bakerData.emergency_roster || false)
+      setEmergencyWindows(bakerData.emergency_windows || [])
       const { data: ordersData } = await supabase.from('orders').select('*, inspiration_photo_urls').eq('baker_id', bakerData.id).order('created_at', { ascending: false })
       setOrders((ordersData || []).map(o => ({ ...o, inspiration_photo_urls: o.inspiration_photo_urls || [] })))
       const { data: portfolioData } = await supabase.from('portfolio_items').select('*').eq('baker_id', bakerData.id).order('created_at', { ascending: false })
@@ -92,7 +98,7 @@ export default function BakerDashboard() {
     setSaving(true)
     await supabase.from('bakers').update({
       business_name: businessName, bio, city, state, zip_code: zipCode,
-      starting_price: parseInt(startingPrice) || null, lead_time_days: parseInt(leadTime) || 7,
+      starting_price: parseInt(startingPrice) || null, lead_time_days: parseInt(leadTime) || 7, phone: phone || null,
       specialties: baker?.specialties || [], rush_orders_available: baker?.rush_orders_available || false,
       cancellation_policy: baker?.cancellation_policy || '', pickup_address: baker?.pickup_address || null,
     }).eq('id', baker.id)
@@ -134,6 +140,12 @@ export default function BakerDashboard() {
   async function updateOrderStatus(orderId: string, status: string) {
     await supabase.from('orders').update({ status }).eq('id', orderId)
     setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o))
+    if (status === 'confirmed') {
+      const order = orders.find(o => o.id === orderId)
+      if (order) {
+        fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'deposit_nudge', customerEmail: order.customer_email, customerName: order.customer_name, bakerName: baker.business_name, eventType: order.event_type, eventDate: order.event_date, budget: order.budget, orderId }) }).catch(() => {})
+      }
+    }
   }
 
   async function submitDelivery(order: any) {
@@ -664,6 +676,12 @@ async function triggerEmergencyPause() {
               <div><label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Business Name</label><input value={businessName} onChange={e => setBusinessName(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} /></div>
               <div><label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Bio</label><textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} /></div>
 
+              <div>
+                <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Phone Number</label>
+                <input value={phone} onChange={e => setPhone(e.target.value)} type="tel" placeholder="e.g. (301) 555-0123" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                <p className="text-xs mt-1" style={{ color: '#9c7b6b' }}>Used for emergency contact only — not shown publicly</p>
+              </div>
+
               <div className="flex gap-3">
                 <div className="flex-1"><label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>City</label><input value={city} onChange={e => setCity(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} /></div>
                 <div className="w-20"><label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>State</label><input value={state} onChange={e => setState(e.target.value)} className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} /></div>
@@ -785,6 +803,39 @@ async function triggerEmergencyPause() {
         style={{ backgroundColor: '#166534' }}>
         I am back — Resume Orders
       </button>
+    </div>
+  )}
+</div>
+
+{/* Emergency Roster */}
+<div className="border-t pt-5" style={{ borderColor: '#e0d5cc' }}>
+  <div className="flex items-center justify-between mb-1">
+    <div>
+      <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>Emergency Roster</p>
+      <p className="text-xs" style={{ color: '#5c3d2e' }}>Let Whiskly know you can step in for other bakers in emergencies</p>
+    </div>
+    <button onClick={async () => {
+      const newVal = !isEmergencyRoster
+      setIsEmergencyRoster(newVal)
+      await supabase.from('bakers').update({ emergency_roster: newVal } as any).eq('id', baker.id)
+    }} className="w-10 h-6 rounded-full relative flex-shrink-0 transition-all"
+      style={{ backgroundColor: isEmergencyRoster ? '#166534' : '#e0d5cc' }}>
+      <div className="w-4 h-4 bg-white rounded-full absolute top-1 transition-all" style={{ left: isEmergencyRoster ? '22px' : '4px' }} />
+    </button>
+  </div>
+  {isEmergencyRoster && (
+    <div className="mt-3 p-3 rounded-xl border" style={{ borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }}>
+      <p className="text-xs font-semibold mb-2" style={{ color: '#166534' }}>Available windows</p>
+      {['Under 24 hours', '24-48 hours', '48-72 hours'].map(window => (
+        <label key={window} className="flex items-center gap-2 mb-1.5 cursor-pointer">
+          <input type="checkbox" checked={emergencyWindows.includes(window)} onChange={async () => {
+            const updated = emergencyWindows.includes(window) ? emergencyWindows.filter(w => w !== window) : [...emergencyWindows, window]
+            setEmergencyWindows(updated)
+            await supabase.from('bakers').update({ emergency_windows: updated } as any).eq('id', baker.id)
+          }} />
+          <span className="text-xs" style={{ color: '#2d1a0e' }}>{window}</span>
+        </label>
+      ))}
     </div>
   )}
 </div>

@@ -116,8 +116,9 @@ function CustomerDashboardInner() {
         .eq('customer_email', customerData.email)
         .order('created_at', { ascending: false })
       setOrders(ordersData || [])
-      const saved = JSON.parse(localStorage.getItem('whiskly-saved-bakers') || '[]')
-      setSavedBakers(saved)
+      const { data: savedData } = await supabase
+        .from('saved_bakers').select('baker_id').eq('customer_id', customerData.id)
+      setSavedBakers((savedData || []).map((r: any) => r.baker_id))
       const { data: bakersData } = await supabase
         .from('bakers').select('*').eq('is_active', true).eq('profile_complete', true)
         .eq('state', customerData.state || 'MD').limit(4)
@@ -233,11 +234,15 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
     return (Date.now() - new Date(completedAt).getTime()) / 3600000 >= 48
   }
 
-  function toggleSave(bakerId: string) {
-    const current = JSON.parse(localStorage.getItem('whiskly-saved-bakers') || '[]')
-    const updated = current.includes(bakerId) ? current.filter((id: string) => id !== bakerId) : [...current, bakerId]
-    localStorage.setItem('whiskly-saved-bakers', JSON.stringify(updated))
-    setSavedBakers(updated)
+  async function toggleSave(bakerId: string) {
+    if (!customer) return
+    if (savedBakers.includes(bakerId)) {
+      await supabase.from('saved_bakers').delete().eq('customer_id', customer.id).eq('baker_id', bakerId)
+      setSavedBakers(prev => prev.filter(id => id !== bakerId))
+    } else {
+      await supabase.from('saved_bakers').insert({ customer_id: customer.id, baker_id: bakerId })
+      setSavedBakers(prev => [...prev, bakerId])
+    }
   }
 
   function getDaysUntil(dateStr: string) {

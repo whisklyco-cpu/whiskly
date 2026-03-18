@@ -409,7 +409,26 @@ Used for: fraudulent disputes, abusive behavior toward bakers, chargebacks witho
 
 ---
 
-## 12. Weekly Admin Checklist
+## 13. Post-Launch Week One Checklist
+
+Run through this in the first week after launch.
+
+**Email setup:**
+- [ ] Create support@whiskly.co (Google Workspace or Zoho — ~$6/month)
+- [ ] Verify support@whiskly.co in Resend dashboard (Settings → Domains → Add Email Address)
+- [ ] Build `/api/admin/send-email` route (see ROADMAP.md for code)
+- [ ] Replace all "Open in Email" buttons in admin panel Emergency and Dispute workflows with direct Send buttons
+- [ ] Test by sending a real email from admin panel to yourself
+
+**Why this matters:** The current admin panel uses `mailto:` links which require a configured email client. If you are on a browser without a default mail app set up (common on work computers or new machines), those buttons do nothing. The Resend fix makes email sending work from any browser with one click and no dependencies.
+
+**Stripe:**
+- [ ] Confirm webhook is receiving events (Stripe dashboard → Developers → Webhooks → whiskly.co endpoint → check Recent Deliveries)
+- [ ] Place a real test order end-to-end and verify deposit flow works
+
+**Baker SQL:**
+- [ ] Run: `SELECT business_name, tier, is_pro FROM bakers ORDER BY created_at` — verify all bakers have correct tier values
+- [ ] Run: `UPDATE bakers SET tier = 'pro' WHERE is_pro = true AND (tier IS NULL OR tier != 'pro')` to fix any mismatches
 
 Run through this every Monday morning. Takes about 15-20 minutes.
 
@@ -441,6 +460,44 @@ Run through this every Monday morning. Takes about 15-20 minutes.
 - [ ] Check Stripe dashboard — any failed payments or disputes?
 
 ---
+---
+
+## 14. Baker Outreach Templates
+
+### Target Baker Profile
+Bakers with 2,000-8,000 Instagram followers who are getting consistent custom order requests through DMs but don't have a system to manage them yet. Not the baker with 50k followers who already has a booking system. The baker who is talented enough that people are finding her but not big enough to have processes yet.
+
+### DM Template — Strangers
+Hey [Name]! I came across your page and your work is gorgeous 😍
+
+I wanted to reach out baker to baker. I used to run my own bakery and one of the biggest headaches was managing custom orders through DMs. Keeping track of details, collecting deposits, following up with customers... all of it scattered across Instagram messages and text threads.
+
+I built Whiskly to fix that. It gives independent bakers a clean way to receive custom order requests, collect deposits automatically, and manage everything in one place. No more paper trail of DMs.
+
+I'm bringing on a small group of founding bakers right now, before we open up to customers. Founding bakers lock in a reduced commission rate forever.
+
+Would love to show you around if you're curious. No pressure at all 🎂
+
+Alex
+whiskly.co
+
+### DM Template — Friends
+Hey [Name]! Okay so you know how managing custom orders through DMs is a whole thing? The back and forth, collecting deposits over Venmo, keeping track of everything in your head?
+
+I actually built something for that lol. It's called Whiskly and it's basically a platform where customers submit their order details, you accept or decline, and deposits get collected automatically. Everything in one place.
+
+I'm bringing on founding bakers right now before I open it to customers and I really want you to be one of them. You'd lock in a lower commission rate forever and honestly your feedback would mean a lot to me since you know this world.
+
+Can I show you around? 🎂
+
+whiskly.co
+
+### Outreach Tips
+- Personalize the opener with something specific about their actual work
+- Do not send more than 5-10 DMs at once
+- Make sure your Whiskly Instagram exists and looks credible before sending
+- Goal of first batch is conversations, not sign-ups
+- A "tell me more" reply is a win
 
 *This document should be reviewed and updated quarterly or whenever a significant platform change is made.*
 *Questions or suggested additions: support@whiskly.co*

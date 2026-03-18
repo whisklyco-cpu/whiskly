@@ -62,6 +62,14 @@ Last updated: March 2026
 
 ---
 
+## Post-Launch Immediate (first week after launch)
+- [ ] **Resend direct send from admin panel** — verify support@whiskly.co in Resend dashboard, create `/api/admin/send-email` route, replace all "Open in Email" + "Copy Text" combos in admin panel (Emergency and Dispute workflows) with a single "Send Email" button that fires Resend directly and shows "✓ Sent" inline. No mail client dependency. ~30 min build. TRIGGER: Do this the same week you set up support@whiskly.co email.
+- [ ] **Set up support@whiskly.co** — create the email address (Google Workspace or Zoho, ~$6/month), verify in Resend dashboard, update all email references in codebase from placeholder to live address
+- [ ] **Stripe webhook verify** — confirm webhook is receiving events correctly on whiskly.co (check Stripe dashboard → Webhooks → recent deliveries)
+- [ ] **First baker SQL fix** — confirm `tier` column is correct for all bakers (run: `SELECT business_name, tier, is_pro FROM bakers ORDER BY created_at`)
+
+---
+
 ## V3 — Growth
 - [ ] Referral program (baker referral codes, customer referral credits)
 - [ ] Push notifications
