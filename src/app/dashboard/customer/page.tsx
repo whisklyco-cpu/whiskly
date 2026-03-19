@@ -318,6 +318,31 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
     setTimeout(() => setShowSuccessToast(false), 4000)
   }
 
+  async function acceptCounterOffer(order: any) {
+    await supabase.from('orders').update({
+      status: 'confirmed',
+      counter_status: 'accepted',
+      budget: order.counter_price,
+    }).eq('id', order.id)
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'deposit_nudge',
+        customerEmail: order.customer_email,
+        customerName: order.customer_name,
+        bakerName: order.bakers?.business_name,
+        amount: order.counter_price,
+      }),
+    }).catch(() => {})
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'confirmed', counter_status: 'accepted', budget: order.counter_price } : o))
+  }
+
+  async function declineCounterOffer(order: any) {
+    await supabase.from('orders').update({ status: 'declined', counter_status: 'declined' }).eq('id', order.id)
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'declined', counter_status: 'declined' } : o))
+  }
+
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
   async function handleSignOut() { await supabase.auth.signOut(); router.push('/') }
@@ -453,6 +478,15 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
 
         {activeTab === 'orders' && (
           <div className="flex flex-col gap-4">
+            {orders.some(o => o.counter_status === 'pending') && (
+              <div className="rounded-2xl px-5 py-4 flex items-center gap-3" style={{ backgroundColor: '#fffbeb', border: '2px solid #f59e0b' }}>
+                <span className="text-xl flex-shrink-0">💬</span>
+                <div>
+                  <p className="text-sm font-bold" style={{ color: '#92400e' }}>You have a counter offer waiting</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#78350f' }}>A baker has responded with a new price. Review and accept or decline below.</p>
+                </div>
+              </div>
+            )}
             {orders.length === 0 ? (
               <div className="bg-white rounded-2xl p-16 shadow-sm text-center">
                 <p className="text-5xl mb-4">🎂</p>
@@ -478,10 +512,10 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                     </div>
                     <div className="text-right flex-shrink-0">
                       <span className="px-3 py-1 text-xs font-semibold rounded-full" style={{
-                        backgroundColor: order.status === 'confirmed' ? '#dcfce7' : order.status === 'declined' ? '#fee2e2' : order.status === 'ready' ? '#f3e8ff' : order.status === 'in_progress' ? '#dbeafe' : '#fef9c3',
-                        color: order.status === 'confirmed' ? '#166534' : order.status === 'declined' ? '#991b1b' : order.status === 'ready' ? '#6b21a8' : order.status === 'in_progress' ? '#1e40af' : '#854d0e'
+                        backgroundColor: order.status === 'confirmed' ? '#dcfce7' : order.status === 'declined' ? '#fee2e2' : order.status === 'ready' ? '#f3e8ff' : order.status === 'in_progress' ? '#dbeafe' : order.status === 'countered' ? '#fef3c7' : '#fef9c3',
+                        color: order.status === 'confirmed' ? '#166534' : order.status === 'declined' ? '#991b1b' : order.status === 'ready' ? '#6b21a8' : order.status === 'in_progress' ? '#1e40af' : order.status === 'countered' ? '#92400e' : '#854d0e'
                       }}>
-                        {order.status === 'confirmed' ? 'Confirmed' : order.status === 'declined' ? 'Declined' : order.status === 'in_progress' ? 'In Progress' : order.status === 'ready' ? 'Ready!' : order.status === 'complete' ? 'Complete' : 'Pending'}
+                        {order.status === 'confirmed' ? 'Confirmed' : order.status === 'declined' ? 'Declined' : order.status === 'in_progress' ? 'In Progress' : order.status === 'ready' ? 'Ready!' : order.status === 'complete' ? 'Complete' : order.status === 'countered' ? 'Counter Offer' : 'Pending'}
                       </span>
                       {daysUntil > 0 && order.status !== 'declined' && (
                         <p className="text-xs mt-1 font-semibold" style={{ color: daysUntil <= 7 ? '#dc2626' : '#5c3d2e' }}>
@@ -490,6 +524,39 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                       )}
                     </div>
                   </div>
+
+                  {/* Counter offer card */}
+                  {order.status === 'countered' && order.counter_status === 'pending' && (
+                    <div className="mb-4 rounded-xl p-4" style={{ backgroundColor: '#fffbeb', border: '2px solid #f59e0b' }}>
+                      <p className="text-sm font-bold mb-1" style={{ color: '#92400e' }}>Counter Offer from {order.bakers?.business_name}</p>
+                      <div className="flex items-center gap-4 mb-3">
+                        <div>
+                          <p className="text-xs font-semibold mb-0.5" style={{ color: '#5c3d2e' }}>Counter Price</p>
+                          <p className="text-lg font-bold" style={{ color: '#2d1a0e' }}>${order.counter_price}</p>
+                        </div>
+                        <div className="text-sm" style={{ color: '#9c7b6b' }}>vs.</div>
+                        <div>
+                          <p className="text-xs font-semibold mb-0.5" style={{ color: '#5c3d2e' }}>Your Budget</p>
+                          <p className="text-lg font-bold" style={{ color: '#5c3d2e' }}>${order.budget}</p>
+                        </div>
+                      </div>
+                      {order.counter_message && (
+                        <p className="text-sm mb-3 italic leading-relaxed" style={{ color: '#78350f' }}>"{order.counter_message}"</p>
+                      )}
+                      <div className="flex gap-2">
+                        <button onClick={() => acceptCounterOffer(order)}
+                          className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold"
+                          style={{ backgroundColor: '#2d1a0e' }}>
+                          Accept ${order.counter_price}
+                        </button>
+                        <button onClick={() => declineCounterOffer(order)}
+                          className="flex-1 py-2.5 rounded-xl text-sm font-bold border"
+                          style={{ borderColor: '#fca5a5', color: '#991b1b', backgroundColor: 'white' }}>
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Deposit payment prompt */}
                   {needsDeposit(order) && (
