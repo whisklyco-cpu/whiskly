@@ -277,6 +277,36 @@ async function triggerEmergencyPause() {
     const [localCounterPrice, setLocalCounterPrice] = useState('')
     const [localCounterMessage, setLocalCounterMessage] = useState('')
     const [localCounterSending, setLocalCounterSending] = useState(false)
+    // Accept confirmation modal
+    const [showAcceptModal, setShowAcceptModal] = useState(false)
+    // Cancel modal
+    const [showCancelModal, setShowCancelModal] = useState(false)
+    const [cancelReason, setCancelReason] = useState('')
+    const [cancelDescription, setCancelDescription] = useState('')
+    const [cancellingOrder, setCancellingOrder] = useState(false)
+    // Dispute modal
+    const [showDisputeModal, setShowDisputeModal] = useState(false)
+    const [disputeReason, setDisputeReason] = useState('')
+    const [disputeDescription, setDisputeDescription] = useState('')
+    const [filingDispute, setFilingDispute] = useState(false)
+    // Rate customer
+    const [alreadyRated, setAlreadyRated] = useState(false)
+    const [showRateModal, setShowRateModal] = useState(false)
+    const [rateStars, setRateStars] = useState(5)
+    const [rateNote, setRateNote] = useState('')
+    const [submittingRating, setSubmittingRating] = useState(false)
+    // Customer rating display (shown when expanded)
+    const [customerAvgRating, setCustomerAvgRating] = useState<number | null>(null)
+    const [customerRatingCount, setCustomerRatingCount] = useState(0)
+    const [loadedCustomerRating, setLoadedCustomerRating] = useState(false)
+    // Three-dots menu / Block / Flag
+    const [showDotsMenu, setShowDotsMenu] = useState(false)
+    const [showBlockModal, setShowBlockModal] = useState(false)
+    const [blockingCustomer, setBlockingCustomer] = useState(false)
+    const [showFlagModal, setShowFlagModal] = useState(false)
+    const [flagReason, setFlagReason] = useState('')
+    const [flagDescription, setFlagDescription] = useState('')
+    const [submittingFlag, setSubmittingFlag] = useState(false)
 
     const statusConfig: Record<string, { label: string, bg: string, color: string }> = {
       pending:     { label: 'Pending',      bg: '#fef9c3', color: '#854d0e' },
@@ -286,9 +316,31 @@ async function triggerEmergencyPause() {
       ready:       { label: 'Ready',        bg: '#f3e8ff', color: '#6b21a8' },
       complete:    { label: 'Complete',     bg: '#f5f0eb', color: '#2d1a0e' },
       declined:    { label: 'Declined',     bg: '#fee2e2', color: '#991b1b' },
+      cancelled:   { label: 'Cancelled',    bg: '#fee2e2', color: '#991b1b' },
+      disputed:    { label: 'Disputed',     bg: '#fef3c7', color: '#92400e' },
     }
     const s = statusConfig[order.status] || statusConfig.pending
     const isAccepted = ['confirmed','in_progress','ready','complete'].includes(order.status)
+    const canDispute = !!order.deposit_paid_at &&
+      ['confirmed', 'in_progress', 'ready', 'complete'].includes(order.status) &&
+      !order.is_disputed
+
+    useEffect(() => {
+      if (order.status === 'complete') {
+        supabase.from('customer_reviews').select('id').eq('order_id', order.id).maybeSingle().then(({ data }) => {
+          if (data) setAlreadyRated(true)
+        })
+      }
+    }, [order.id, order.status])
+
+    useEffect(() => {
+      if (expanded && !loadedCustomerRating) {
+        supabase.from('customers').select('avg_rating, rating_count').eq('email', order.customer_email).maybeSingle().then(({ data }) => {
+          if (data) { setCustomerAvgRating(data.avg_rating || null); setCustomerRatingCount(data.rating_count || 0) }
+          setLoadedCustomerRating(true)
+        })
+      }
+    }, [expanded, loadedCustomerRating])
 
     async function handleSendQuestion() {
       if (!localQuestion.trim()) return
@@ -319,7 +371,315 @@ async function triggerEmergencyPause() {
       setLocalCountering(false); setLocalCounterPrice(''); setLocalCounterMessage(''); setLocalCounterSending(false)
     }
 
+    async function handleRateCustomer() {
+      setSubmittingRating(true)
+      const { data: customerData } = await supabase.from('customers').select('id').eq('email', order.customer_email).maybeSingle()
+      if (!customerData) { setSubmittingRating(false); return }
+      await supabase.from('customer_reviews').insert({ order_id: order.id, baker_id: baker.id, customer_id: customerData.id, rating: rateStars, private_note: rateNote.trim() || null })
+      const { data: allReviews } = await supabase.from('customer_reviews').select('rating').eq('customer_id', customerData.id)
+      if (allReviews && allReviews.length > 0) {
+        const avg = allReviews.reduce((sum: number, r: any) => sum + r.rating, 0) / allReviews.length
+        await supabase.from('customers').update({ avg_rating: Math.round(avg * 100) / 100, rating_count: allReviews.length }).eq('id', customerData.id)
+      }
+      setAlreadyRated(true); setShowRateModal(false); setRateStars(5); setRateNote(''); setSubmittingRating(false)
+    }
+
+    async function handleBlockCustomer() {
+      setBlockingCustomer(true)
+      const { data: customerData } = await supabase.from('customers').select('user_id').eq('email', order.customer_email).maybeSingle()
+      await supabase.from('blocks').insert({ blocker_id: baker.id, blocked_id: customerData?.user_id, blocker_type: 'baker' })
+      setShowBlockModal(false); setShowDotsMenu(false); setBlockingCustomer(false)
+    }
+
+    async function handleFlagCustomer() {
+      if (!flagReason || flagDescription.trim().length < 20) return
+      setSubmittingFlag(true)
+      const { data: customerData } = await supabase.from('customers').select('id').eq('email', order.customer_email).maybeSingle()
+      if (!customerData) { setSubmittingFlag(false); return }
+      await supabase.from('customer_flags').upsert({ baker_id: baker.id, customer_id: customerData.id, reason: flagReason, description: flagDescription.trim() }, { onConflict: 'baker_id,customer_id' })
+      const { count } = await supabase.from('customer_flags').select('*', { count: 'exact', head: true }).eq('customer_id', customerData.id)
+      const newFlagCount = count || 0
+      const updates: any = { flag_count: newFlagCount }
+      if (newFlagCount >= 3) {
+        updates.is_flagged = true
+        await fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'announcement', to: 'support@whiskly.co', name: 'Whiskly Admin', subject: '[ADMIN] Customer flagged — ' + order.customer_name, body: order.customer_name + ' (' + order.customer_email + ') has reached ' + newFlagCount + ' flags.\n\nLatest flag: ' + flagReason + '\n' + flagDescription.trim() + '\n\nFiled by: ' + baker.business_name }) }).catch(() => {})
+      }
+      await supabase.from('customers').update(updates).eq('id', customerData.id)
+      setShowFlagModal(false); setFlagReason(''); setFlagDescription(''); setSubmittingFlag(false)
+    }
+
+    async function handleCancelOrder() {
+      if (!cancelReason) return
+      setCancellingOrder(true)
+      const now = new Date().toISOString()
+      await supabase.from('orders').update({
+        status: 'cancelled',
+        cancelled_by: 'baker',
+        cancellation_reason: cancelReason,
+        cancelled_at: now,
+      }).eq('id', order.id)
+      if (order.deposit_paid_at) {
+        await fetch('/api/stripe/refund', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_id: order.id }),
+        }).catch(() => {})
+      }
+      const existingLog: any[] = baker.strike_log || []
+      const newStrike = { reason: cancelReason, date: now, order_id: order.id, type: 'baker_cancellation' }
+      const newCount = (baker.strike_count || 0) + 1
+      await supabase.from('bakers').update({
+        strike_count: newCount,
+        strike_log: [...existingLog, newStrike],
+      }).eq('id', baker.id)
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'baker_cancelled',
+          customerEmail: order.customer_email,
+          customerName: order.customer_name,
+          bakerName: baker.business_name,
+          eventType: order.event_type,
+          eventDate: order.event_date,
+          orderId: order.id,
+          reason: cancelReason,
+        }),
+      }).catch(() => {})
+      setBaker((prev: any) => ({ ...prev, strike_count: newCount, strike_log: [...existingLog, newStrike] }))
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'cancelled', cancelled_by: 'baker' } : o))
+      setShowCancelModal(false); setCancelReason(''); setCancelDescription(''); setCancellingOrder(false)
+    }
+
+    async function handleBakerFileDispute() {
+      if (!disputeReason || disputeDescription.trim().length < 20) return
+      setFilingDispute(true)
+      const now = new Date().toISOString()
+      await supabase.from('orders').update({
+        status: 'disputed',
+        is_disputed: true,
+        dispute_reason: disputeReason,
+        dispute_description: disputeDescription.trim(),
+        dispute_filed_by: 'baker',
+        dispute_filed_at: now,
+      }).eq('id', order.id)
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'dispute_filed',
+          customerEmail: order.customer_email,
+          customerName: order.customer_name,
+          bakerName: baker.business_name,
+          bakerEmail: baker.email,
+          eventType: order.event_type,
+          eventDate: order.event_date,
+          orderId: order.id,
+          reason: disputeReason,
+          filedBy: 'baker',
+        }),
+      }).catch(() => {})
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'disputed', is_disputed: true } : o))
+      setShowDisputeModal(false); setDisputeReason(''); setDisputeDescription(''); setFilingDispute(false)
+    }
+
     return (
+      <>
+      {/* Accept Confirmation Modal */}
+      {showAcceptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-bold text-lg mb-4" style={{ color: '#2d1a0e' }}>Confirm Accept Order</h3>
+            <div className="flex flex-col gap-2.5 mb-4 p-4 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+              <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Customer</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.customer_name}</p></div>
+              <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Event Type</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.event_type}</p></div>
+              <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Event Date</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{(() => { const [y,m,d] = order.event_date.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([],{month:'long',day:'numeric',year:'numeric'}) })()}</p></div>
+              <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Budget</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>${order.budget}</p></div>
+              {order.servings && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Servings</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.servings}</p></div>}
+              {order.fulfillment_type && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Fulfillment</p><p className="text-sm font-medium capitalize" style={{ color: '#2d1a0e' }}>{order.fulfillment_type}</p></div>}
+            </div>
+            {order.budget > 150 && (
+              <p className="text-sm font-bold mb-4 px-4 py-3 rounded-xl" style={{ color: '#991b1b', backgroundColor: '#fee2e2' }}>
+                You are committing to make this order. Cancelling after accepting will result in a full refund to the customer and a strike on your account.
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => setShowAcceptModal(false)} className="flex-1 py-3 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Review Order</button>
+              <button onClick={() => { updateOrderStatus(order.id, 'confirmed'); setShowAcceptModal(false) }} className="flex-1 py-3 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Yes, Accept Order</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Order Modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Cancel Order</h3>
+            <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>{order.customer_name} · {order.event_type}</p>
+            {order.status === 'in_progress' && (
+              <div className="mb-4 px-4 py-3 rounded-xl" style={{ backgroundColor: '#fee2e2', border: '1px solid #fecaca' }}>
+                <p className="text-sm font-bold" style={{ color: '#991b1b' }}>This is a serious action.</p>
+                <p className="text-xs mt-0.5" style={{ color: '#991b1b' }}>This order is in progress and the event is approaching. Please contact the customer first before cancelling.</p>
+              </div>
+            )}
+            <div className="mb-3">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#2d1a0e' }}>Reason <span style={{ color: '#dc2626' }}>*</span></label>
+              <select value={cancelReason} onChange={e => setCancelReason(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: cancelReason ? '#2d1a0e' : '#9c7b6b', backgroundColor: '#faf8f6' }}>
+                <option value="">Select a reason</option>
+                <option value="Scheduling conflict">Scheduling conflict</option>
+                <option value="Unable to fulfill this design">Unable to fulfill this design</option>
+                <option value="Personal circumstances">Personal circumstances</option>
+                <option value="Event date is too soon for my lead time">Event date is too soon for my lead time</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#2d1a0e' }}>Additional details (optional)</label>
+              <textarea value={cancelDescription} onChange={e => setCancelDescription(e.target.value)} rows={3} placeholder="Any additional context..." className="w-full px-3 py-2.5 rounded-lg border text-sm resize-none" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+            </div>
+            <div className="mb-4 px-4 py-3 rounded-xl" style={{ backgroundColor: '#fef3c7', border: '1px solid #fde68a' }}>
+              <p className="text-xs font-bold" style={{ color: '#92400e' }}>Consequence warning</p>
+              <p className="text-xs mt-0.5" style={{ color: '#92400e' }}>Cancelling will issue a full refund to the customer and add a strike to your account.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setShowCancelModal(false); setCancelReason(''); setCancelDescription('') }} className="flex-1 py-3 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Go Back</button>
+              <button onClick={handleCancelOrder} disabled={!cancelReason || cancellingOrder} className="flex-1 py-3 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#dc2626', opacity: (!cancelReason || cancellingOrder) ? 0.5 : 1 }}>
+                {cancellingOrder ? 'Cancelling...' : 'Cancel Order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rate Customer Modal */}
+      {showRateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Rate {order.customer_name}</h3>
+            <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>This rating is private and helps you and other bakers on Whiskly.</p>
+            <div className="flex gap-2 mb-4 justify-center">
+              {[1,2,3,4,5].map(star => (
+                <button key={star} onClick={() => setRateStars(star)} className="text-3xl transition-opacity" style={{ opacity: star <= rateStars ? 1 : 0.3 }}>★</button>
+              ))}
+            </div>
+            <textarea
+              value={rateNote}
+              onChange={e => setRateNote(e.target.value)}
+              rows={3}
+              placeholder="Optional private note (only visible to you and Whiskly admins)..."
+              className="w-full px-3 py-2.5 rounded-xl border text-sm resize-none mb-4"
+              style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
+            />
+            <div className="flex gap-3">
+              <button onClick={() => { setShowRateModal(false); setRateStars(5); setRateNote('') }} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+              <button onClick={handleRateCustomer} disabled={submittingRating} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2d1a0e', opacity: submittingRating ? 0.5 : 1 }}>
+                {submittingRating ? 'Submitting...' : 'Submit Rating'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Block Customer Modal */}
+      {showBlockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="font-bold text-lg mb-2" style={{ color: '#2d1a0e' }}>Block {order.customer_name}?</h3>
+            <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>They won't be able to send you new orders. This action can be reversed by contacting Whiskly support.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowBlockModal(false)} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+              <button onClick={handleBlockCustomer} disabled={blockingCustomer} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#dc2626', opacity: blockingCustomer ? 0.5 : 1 }}>
+                {blockingCustomer ? 'Blocking...' : 'Block Customer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Flag Customer Modal */}
+      {showFlagModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Flag {order.customer_name}</h3>
+            <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>Flags are reviewed by Whiskly. If a customer reaches 3 flags, admin is alerted.</p>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Reason <span style={{ color: '#dc2626' }}>*</span></label>
+              <select value={flagReason} onChange={e => setFlagReason(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border text-sm" style={{ borderColor: '#e0d5cc', color: flagReason ? '#2d1a0e' : '#9ca3af', backgroundColor: 'white' }}>
+                <option value="">Select a reason...</option>
+                <option value="no_show">No-show / didn't pick up order</option>
+                <option value="abusive">Abusive or threatening behavior</option>
+                <option value="false_dispute">Filed a false dispute</option>
+                <option value="payment_issues">Payment or chargeback issues</option>
+                <option value="unreasonable_demands">Unreasonable demands</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Description <span style={{ color: '#dc2626' }}>*</span></label>
+              <textarea
+                value={flagDescription}
+                onChange={e => setFlagDescription(e.target.value)}
+                rows={3}
+                placeholder="Describe what happened (minimum 20 characters)..."
+                className="w-full px-3 py-2.5 rounded-xl border text-sm resize-none"
+                style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
+              />
+              {flagDescription.trim().length > 0 && flagDescription.trim().length < 20 && (
+                <p className="text-xs mt-1" style={{ color: '#dc2626' }}>{20 - flagDescription.trim().length} more characters required</p>
+              )}
+            </div>
+            <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Only submit flags in good faith. Abuse of the flag system may result in your account being reviewed.</p>
+            <div className="flex gap-3">
+              <button onClick={() => { setShowFlagModal(false); setFlagReason(''); setFlagDescription('') }} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+              <button onClick={handleFlagCustomer} disabled={submittingFlag || !flagReason || flagDescription.trim().length < 20} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#92400e', opacity: (submittingFlag || !flagReason || flagDescription.trim().length < 20) ? 0.5 : 1 }}>
+                {submittingFlag ? 'Submitting...' : 'Submit Flag'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* File Dispute Modal */}
+      {showDisputeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>File a Dispute</h3>
+            <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>{order.customer_name} · {order.event_type}</p>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#2d1a0e' }}>Reason <span style={{ color: '#dc2626' }}>*</span></label>
+              <select value={disputeReason} onChange={e => setDisputeReason(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: disputeReason ? '#2d1a0e' : '#9c7b6b', backgroundColor: '#faf8f6' }}>
+                <option value="">Select a reason</option>
+                <option value="Customer no-show for pickup">Customer no-show for pickup</option>
+                <option value="Customer refusing to pay remainder">Customer refusing to pay remainder</option>
+                <option value="False quality claim">False quality claim</option>
+                <option value="Customer provided wrong delivery information">Customer provided wrong delivery information</option>
+                <option value="Abusive or threatening behavior">Abusive or threatening behavior</option>
+                <option value="Attempted to take transaction off-platform">Attempted to take transaction off-platform</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#2d1a0e' }}>Description <span style={{ color: '#dc2626' }}>*</span> <span className="font-normal" style={{ color: '#9c7b6b' }}>(min 20 characters)</span></label>
+              <textarea value={disputeDescription} onChange={e => setDisputeDescription(e.target.value)} rows={4} placeholder="Describe the issue in detail..." className="w-full px-3 py-2.5 rounded-lg border text-sm resize-none" style={{ borderColor: disputeDescription.trim().length > 0 && disputeDescription.trim().length < 20 ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+              {disputeDescription.trim().length > 0 && disputeDescription.trim().length < 20 && (
+                <p className="text-xs mt-1" style={{ color: '#dc2626' }}>{20 - disputeDescription.trim().length} more characters needed</p>
+              )}
+            </div>
+            <div className="mb-4 px-4 py-3 rounded-xl" style={{ backgroundColor: '#fef3c7', border: '1px solid #fde68a' }}>
+              <p className="text-xs font-bold" style={{ color: '#92400e' }}>This order will be locked</p>
+              <p className="text-xs mt-0.5" style={{ color: '#92400e' }}>Filing a dispute locks this order. Neither party can change its status until our team reviews it within 48 hours.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setShowDisputeModal(false); setDisputeReason(''); setDisputeDescription('') }} className="flex-1 py-3 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+              <button onClick={handleBakerFileDispute} disabled={!disputeReason || disputeDescription.trim().length < 20 || filingDispute} className="flex-1 py-3 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#dc2626', opacity: (!disputeReason || disputeDescription.trim().length < 20 || filingDispute) ? 0.5 : 1 }}>
+                {filingDispute ? 'Filing...' : 'File Dispute'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#e0d5cc' }}>
         <button onClick={() => setExpanded(!expanded)} className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left" style={{ backgroundColor: expanded ? '#faf8f6' : 'white' }}>
           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -358,7 +718,7 @@ async function triggerEmergencyPause() {
         <div className="px-5 pb-3 flex gap-2 flex-wrap" style={{ backgroundColor: expanded ? '#faf8f6' : 'white' }}>
           {order.status === 'pending' && !localAsking && !localCountering && (
             <>
-              <button onClick={() => updateOrderStatus(order.id, 'confirmed')} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Accept</button>
+              <button onClick={() => setShowAcceptModal(true)} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Accept</button>
               <button onClick={() => { setExpanded(true); setLocalCountering(true) }} className="px-4 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#8B4513', color: '#8B4513' }}>Counter Offer</button>
               <button onClick={() => { setExpanded(true); setLocalAsking(true) }} className="px-4 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#5c3d2e', color: '#5c3d2e' }}>Ask a Question</button>
               <button onClick={() => updateOrderStatus(order.id, 'declined')} className="px-4 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#991b1b', color: '#991b1b' }}>Decline</button>
@@ -373,6 +733,26 @@ async function triggerEmergencyPause() {
           {order.status === 'ready' && order.fulfillment_type === 'pickup' && !order.handoff_photo_url && <button onClick={() => setDeliveryModalOrder(order)} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#1e40af' }}>Confirm Handoff</button>}
           {order.status === 'ready' && order.fulfillment_type === 'pickup' && order.handoff_photo_url && <span className="px-4 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>Handoff photo uploaded — awaiting customer confirmation</span>}
           {order.status === 'ready' && !order.fulfillment_type && <button onClick={() => updateOrderStatus(order.id, 'complete')} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166634' }}>Mark Complete</button>}
+          {(order.status === 'confirmed' || order.status === 'in_progress') && (
+            <button onClick={() => setShowCancelModal(true)} className="px-4 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Cancel Order</button>
+          )}
+          {canDispute && (
+            <button onClick={() => setShowDisputeModal(true)} className="px-4 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#92400e', color: '#92400e' }}>File Dispute</button>
+          )}
+          {order.status === 'complete' && !alreadyRated && (
+            <button onClick={() => setShowRateModal(true)} className="px-4 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#5c3d2e', color: '#5c3d2e' }}>Rate Customer</button>
+          )}
+          {(order.status === 'complete' || order.status === 'declined') && (
+            <div className="relative">
+              <button onClick={() => setShowDotsMenu(v => !v)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>⋯</button>
+              {showDotsMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border z-30 min-w-36 overflow-hidden" style={{ borderColor: '#e0d5cc' }}>
+                  <button onClick={() => { setShowDotsMenu(false); setShowBlockModal(true) }} className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-gray-50" style={{ color: '#dc2626' }}>Block Customer</button>
+                  <button onClick={() => { setShowDotsMenu(false); setShowFlagModal(true) }} className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-gray-50 border-t" style={{ borderColor: '#f5f0eb', color: '#92400e' }}>Flag Customer</button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {expanded && (
@@ -422,7 +802,17 @@ async function triggerEmergencyPause() {
               </div>
             )}
 
-            <div className="pt-1"><p className="text-xs" style={{ color: '#5c3d2e' }}>{order.customer_email}</p></div>
+            <div className="pt-1 flex items-center gap-3 flex-wrap">
+              <p className="text-xs" style={{ color: '#5c3d2e' }}>{order.customer_email}</p>
+              {loadedCustomerRating && (
+                customerAvgRating !== null && customerRatingCount > 0
+                  ? <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>★ {customerAvgRating.toFixed(1)} from {customerRatingCount} order{customerRatingCount !== 1 ? 's' : ''}</span>
+                  : <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>New customer — no rating yet</span>
+              )}
+              {order.status === 'complete' && alreadyRated && (
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>You rated this customer</span>
+              )}
+            </div>
 
             {order.baker_question && <div className="px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Question sent: "{order.baker_question}"</div>}
 
@@ -471,6 +861,7 @@ async function triggerEmergencyPause() {
           </div>
         )}
       </div>
+      </>
     )
   }
 

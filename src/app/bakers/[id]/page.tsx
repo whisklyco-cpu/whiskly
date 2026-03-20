@@ -49,6 +49,7 @@ export default function BakerProfile() {
   const [messageSent, setMessageSent] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [currentCustomer, setCurrentCustomer] = useState<any>(null)
+  const [isBlocked, setIsBlocked] = useState(false)
 
   const [form, setForm] = useState({
     customer_name: '',
@@ -86,7 +87,7 @@ export default function BakerProfile() {
     if (form.fulfillment_type === 'delivery') loadGoogleMaps()
   }, [form.fulfillment_type, loadGoogleMaps])
 
-  // Load current user for message feature
+  // Load current user for message feature + block check
   useEffect(() => {
     async function loadUser() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -95,6 +96,11 @@ export default function BakerProfile() {
       const { data: customerData } = await supabase
         .from('customers').select('*').eq('user_id', session.user.id).maybeSingle()
       setCurrentCustomer(customerData)
+      if (customerData && id) {
+        const { data: blockData } = await supabase.from('blocks')
+          .select('id').eq('blocker_id', id).eq('blocked_id', customerData.user_id).eq('blocker_type', 'baker').maybeSingle()
+        if (blockData) setIsBlocked(true)
+      }
     }
     loadUser()
   }, [])
@@ -591,7 +597,12 @@ export default function BakerProfile() {
           {/* Right Column - Order Form */}
           <div>
             <div className="bg-white rounded-2xl p-6 shadow-sm md:sticky md:top-6">
-              {submitted ? (
+              {isBlocked ? (
+                <div className="text-center py-8">
+                  <p className="text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>This baker is not currently accepting new orders.</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>You can browse other bakers on Whiskly.</p>
+                </div>
+              ) : submitted ? (
                 <div className="text-center py-8">
                   <p className="text-4xl mb-3">🎉</p>
                   <h3 className="font-bold text-lg mb-2" style={{ color: '#2d1a0e' }}>Order Sent!</h3>

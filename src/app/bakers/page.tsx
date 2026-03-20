@@ -72,9 +72,20 @@ export default function BrowseBakers() {
   }, [bakers, search, selectedSpecialty, selectedDietary, maxPrice, deliveryOnly, rushOnly])
 
   async function loadBakers() {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const userId = sessionData?.session?.user?.id
+    let blockedBakerIds: string[] = []
+    if (userId) {
+      const { data: customerData } = await supabase.from('customers').select('id').eq('user_id', userId).maybeSingle()
+      if (customerData) {
+        const { data: blockData } = await supabase.from('blocks').select('blocked_id').eq('blocker_id', customerData.id).eq('blocker_type', 'customer')
+        blockedBakerIds = (blockData || []).map((b: any) => b.blocked_id)
+      }
+    }
     const { data } = await supabase.from('bakers').select('*').eq('is_active', true).eq('profile_complete', true)
-    setBakers(data || [])
-    setFiltered(data || [])
+    const visibleBakers = (data || []).filter((b: any) => !blockedBakerIds.includes(b.id))
+    setBakers(visibleBakers)
+    setFiltered(visibleBakers)
     setLoading(false)
   }
 

@@ -41,6 +41,28 @@ function CustomerDashboardInner() {
   const [paymentOrder, setPaymentOrder] = useState<any>(null)
   const [paymentType, setPaymentType] = useState<'deposit' | 'remainder'>('deposit')
 
+  // Cancel order state
+  const [cancelOrder, setCancelOrder] = useState<any>(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelDescription, setCancelDescription] = useState('')
+  const [cancellingOrder, setCancellingOrder] = useState(false)
+
+  // Dispute state
+  const [disputeOrder, setDisputeOrder] = useState<any>(null)
+  const [disputeReason, setDisputeReason] = useState('')
+  const [disputeDescription, setDisputeDescription] = useState('')
+  const [filingDispute, setFilingDispute] = useState(false)
+
+  // Non-receipt state
+  const [nonReceiptOrder, setNonReceiptOrder] = useState<any>(null)
+  const [nonReceiptInput, setNonReceiptInput] = useState('')
+  const [processingNonReceipt, setProcessingNonReceipt] = useState(false)
+
+  // Block baker state
+  const [blockBakerOrder, setBlockBakerOrder] = useState<any>(null)
+  const [blockingBaker, setBlockingBaker] = useState(false)
+  const [showDotsOrderId, setShowDotsOrderId] = useState<string | null>(null)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { loadDashboard() }, [])
@@ -343,6 +365,120 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'declined', counter_status: 'declined' } : o))
   }
 
+  async function handleCustomerCancelOrder() {
+    if (!cancelOrder || !cancelReason) return
+    setCancellingOrder(true)
+    const now = new Date().toISOString()
+    const daysUntil = getDaysUntil(cancelOrder.event_date)
+    await supabase.from('orders').update({
+      status: 'cancelled',
+      cancelled_by: 'customer',
+      cancellation_reason: cancelReason,
+      cancelled_at: now,
+    }).eq('id', cancelOrder.id)
+    // Refund logic for confirmed orders with deposit paid
+    if (cancelOrder.status === 'confirmed' && cancelOrder.deposit_paid_at) {
+      if (daysUntil >= 7) {
+        await fetch('/api/stripe/refund', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_id: cancelOrder.id }),
+        }).catch(() => {})
+      }
+      // under 7 days: no refund issued
+    }
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'customer_cancelled',
+        bakerEmail: cancelOrder.bakers?.email,
+        bakerName: cancelOrder.bakers?.business_name,
+        customerName: cancelOrder.customer_name,
+        eventType: cancelOrder.event_type,
+        eventDate: cancelOrder.event_date,
+        orderId: cancelOrder.id,
+        reason: cancelReason,
+      }),
+    }).catch(() => {})
+    setOrders(prev => prev.map(o => o.id === cancelOrder.id ? { ...o, status: 'cancelled', cancelled_by: 'customer' } : o))
+    setCancelOrder(null); setCancelReason(''); setCancelDescription(''); setCancellingOrder(false)
+  }
+
+  async function handleCustomerFileDispute() {
+    if (!disputeOrder || !disputeReason || disputeDescription.trim().length < 20) return
+    setFilingDispute(true)
+    const now = new Date().toISOString()
+    await supabase.from('orders').update({
+      status: 'disputed',
+      is_disputed: true,
+      dispute_reason: disputeReason,
+      dispute_description: disputeDescription.trim(),
+      dispute_filed_by: 'customer',
+      dispute_filed_at: now,
+    }).eq('id', disputeOrder.id)
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'dispute_filed',
+        customerEmail: disputeOrder.customer_email,
+        customerName: disputeOrder.customer_name,
+        bakerName: disputeOrder.bakers?.business_name,
+        eventType: disputeOrder.event_type,
+        eventDate: disputeOrder.event_date,
+        orderId: disputeOrder.id,
+        reason: disputeReason,
+        filedBy: 'customer',
+      }),
+    }).catch(() => {})
+    setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, status: 'disputed', is_disputed: true } : o))
+    setDisputeOrder(null); setDisputeReason(''); setDisputeDescription(''); setFilingDispute(false)
+  }
+
+  async function handleNonReceiptConfirm() {
+    if (!nonReceiptOrder || nonReceiptInput !== 'I did not receive my order') return
+    setProcessingNonReceipt(true)
+    // Auto-resolve check: budget < $50, no delivery proof, baker dispute_count = 0, customer refund_count < 2
+    const budget = nonReceiptOrder.budget || 0
+    const hasDeliveryProof = !!nonReceiptOrder.delivery_proof_url
+    const { data: bakerData } = await supabase.from('bakers').select('dispute_count').eq('id', nonReceiptOrder.baker_id).maybeSingle()
+    const { data: customerData } = await supabase.from('customers').select('refund_count').eq('email', nonReceiptOrder.customer_email).maybeSingle()
+    const bakerDisputeCount = bakerData?.dispute_count || 0
+    const customerRefundCount = customerData?.refund_count || 0
+    const autoResolve = budget < 50 && !hasDeliveryProof && bakerDisputeCount === 0 && customerRefundCount < 2
+    if (autoResolve && nonReceiptOrder.remainder_payment_intent_id) {
+      await fetch('/api/stripe/refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentIntentId: nonReceiptOrder.remainder_payment_intent_id }),
+      }).catch(() => {})
+      await supabase.from('customers').update({ refund_count: customerRefundCount + 1 }).eq('email', nonReceiptOrder.customer_email)
+      await supabase.from('orders').update({ status: 'disputed', is_disputed: true, dispute_reason: 'non_receipt', dispute_filed_by: 'customer', customer_confirmed_nonreceipt: true }).eq('id', nonReceiptOrder.id)
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'announcement', to: nonReceiptOrder.customer_email, name: nonReceiptOrder.customer_name, subject: 'Your refund is being processed — Whiskly', body: 'We reviewed your non-receipt report for your order with ' + nonReceiptOrder.bakers?.business_name + ' and have initiated a refund. It may take 5-10 business days to appear.' }),
+      }).catch(() => {})
+    } else {
+      await supabase.from('orders').update({ status: 'disputed', is_disputed: true, dispute_reason: 'non_receipt', dispute_filed_by: 'customer', customer_confirmed_nonreceipt: true }).eq('id', nonReceiptOrder.id)
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'announcement', to: 'support@whiskly.co', name: 'Whiskly Admin', subject: '[ADMIN] Non-receipt dispute — ' + nonReceiptOrder.customer_name, body: nonReceiptOrder.customer_name + ' (' + nonReceiptOrder.customer_email + ') reported non-receipt for order ' + nonReceiptOrder.id + ' with baker ' + nonReceiptOrder.bakers?.business_name + '. Budget: $' + budget + '. Requires manual review.' }),
+      }).catch(() => {})
+    }
+    setOrders(prev => prev.map(o => o.id === nonReceiptOrder.id ? { ...o, status: 'disputed', is_disputed: true, customer_confirmed_nonreceipt: true } : o))
+    setNonReceiptOrder(null); setNonReceiptInput(''); setProcessingNonReceipt(false)
+  }
+
+  async function handleBlockBaker() {
+    if (!blockBakerOrder) return
+    setBlockingBaker(true)
+    await supabase.from('blocks').insert({ blocker_id: customer?.id, blocked_id: blockBakerOrder.baker_id, blocker_type: 'customer' })
+    setBlockBakerOrder(null); setBlockingBaker(false)
+  }
+
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
   async function handleSignOut() { await supabase.auth.signOut(); router.push('/') }
@@ -410,6 +546,137 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
             <p className="text-xs mt-0.5" style={{ color: '#e0c9b0' }}>Your order is confirmed.</p>
           </div>
           <button onClick={() => setShowSuccessToast(false)} className="ml-auto text-xs opacity-60 hover:opacity-100">✕</button>
+        </div>
+      )}
+
+      {/* Cancel Order Modal */}
+      {cancelOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Cancel Order</h3>
+            <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>{cancelOrder.bakers?.business_name} · {cancelOrder.event_type}</p>
+            {cancelOrder.status === 'confirmed' && cancelOrder.deposit_paid_at && (() => {
+              const days = getDaysUntil(cancelOrder.event_date)
+              return (
+                <div className="mb-4 p-4 rounded-xl" style={{ backgroundColor: '#fef9c3', border: '1px solid #fde68a' }}>
+                  {cancelOrder.bakers?.cancellation_policy && (
+                    <p className="text-xs mb-2 leading-relaxed" style={{ color: '#92400e' }}><span className="font-bold">Baker policy:</span> {cancelOrder.bakers.cancellation_policy}</p>
+                  )}
+                  <p className="text-xs font-bold mb-1" style={{ color: '#92400e' }}>Whiskly refund policy:</p>
+                  <p className="text-xs" style={{ color: '#92400e' }}>
+                    {days >= 14 ? '✓ Full refund — your event is 14+ days away.' : days >= 7 ? '⚠ 50% refund — your event is 7–13 days away.' : '✕ No refund — your event is less than 7 days away.'}
+                  </p>
+                </div>
+              )
+            })()}
+            {cancelOrder.status === 'pending' && (
+              <div className="mb-4 px-4 py-3 rounded-xl" style={{ backgroundColor: '#dcfce7', border: '1px solid #bbf7d0' }}>
+                <p className="text-xs font-semibold" style={{ color: '#166534' }}>Free cancellation — no deposit has been charged for this order.</p>
+              </div>
+            )}
+            <div className="mb-3">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#2d1a0e' }}>Reason <span style={{ color: '#dc2626' }}>*</span></label>
+              <select value={cancelReason} onChange={e => setCancelReason(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: cancelReason ? '#2d1a0e' : '#9c7b6b', backgroundColor: '#faf8f6' }}>
+                <option value="">Select a reason</option>
+                <option value="Change of plans">Change of plans</option>
+                <option value="Found another baker">Found another baker</option>
+                <option value="Event cancelled">Event cancelled</option>
+                <option value="Budget changed">Budget changed</option>
+                <option value="Baker hasn't responded">Baker hasn&apos;t responded</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="mb-5">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#2d1a0e' }}>Additional details (optional)</label>
+              <textarea value={cancelDescription} onChange={e => setCancelDescription(e.target.value)} rows={3} placeholder="Any additional context..." className="w-full px-3 py-2.5 rounded-lg border text-sm resize-none" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setCancelOrder(null); setCancelReason(''); setCancelDescription('') }} className="flex-1 py-3 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Go Back</button>
+              <button onClick={handleCustomerCancelOrder} disabled={!cancelReason || cancellingOrder} className="flex-1 py-3 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#dc2626', opacity: (!cancelReason || cancellingOrder) ? 0.5 : 1 }}>
+                {cancellingOrder ? 'Cancelling...' : 'Cancel Order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Non-Receipt Modal */}
+      {nonReceiptOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Report Non-Receipt</h3>
+            <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Please confirm you did not receive your order from <strong>{nonReceiptOrder.bakers?.business_name}</strong>. This will open a review with our team.</p>
+            <p className="text-xs font-semibold mb-2" style={{ color: '#2d1a0e' }}>Type exactly: <span style={{ color: '#dc2626' }}>I did not receive my order</span></p>
+            <input
+              type="text"
+              value={nonReceiptInput}
+              onChange={e => setNonReceiptInput(e.target.value)}
+              placeholder="I did not receive my order"
+              className="w-full px-3 py-2.5 rounded-xl border text-sm mb-4"
+              style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
+            />
+            <div className="flex gap-3">
+              <button onClick={() => { setNonReceiptOrder(null); setNonReceiptInput('') }} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+              <button onClick={handleNonReceiptConfirm} disabled={nonReceiptInput !== 'I did not receive my order' || processingNonReceipt} className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#dc2626', opacity: (nonReceiptInput !== 'I did not receive my order' || processingNonReceipt) ? 0.5 : 1 }}>
+                {processingNonReceipt ? 'Submitting...' : 'Confirm Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Block Baker Modal */}
+      {blockBakerOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="font-bold text-lg mb-2" style={{ color: '#2d1a0e' }}>Block {blockBakerOrder.bakers?.business_name}?</h3>
+            <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>You won't see them in search results and they won't be able to send you messages. This can be reversed by contacting Whiskly support.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setBlockBakerOrder(null)} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+              <button onClick={handleBlockBaker} disabled={blockingBaker} className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#dc2626', opacity: blockingBaker ? 0.5 : 1 }}>
+                {blockingBaker ? 'Blocking...' : 'Block Baker'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* File Dispute Modal */}
+      {disputeOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>File a Dispute</h3>
+            <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>{disputeOrder.bakers?.business_name} · {disputeOrder.event_type}</p>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#2d1a0e' }}>Reason <span style={{ color: '#dc2626' }}>*</span></label>
+              <select value={disputeReason} onChange={e => setDisputeReason(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: disputeReason ? '#2d1a0e' : '#9c7b6b', backgroundColor: '#faf8f6' }}>
+                <option value="">Select a reason</option>
+                <option value="Order never delivered">Order never delivered</option>
+                <option value="Wrong item received">Wrong item received</option>
+                <option value="Quality significantly different from what was agreed">Quality significantly different from what was agreed</option>
+                <option value="Baker cancelled after I paid">Baker cancelled after I paid</option>
+                <option value="Charged incorrectly">Charged incorrectly</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#2d1a0e' }}>Description <span style={{ color: '#dc2626' }}>*</span> <span className="font-normal" style={{ color: '#9c7b6b' }}>(min 20 characters)</span></label>
+              <textarea value={disputeDescription} onChange={e => setDisputeDescription(e.target.value)} rows={4} placeholder="Describe the issue in detail..." className="w-full px-3 py-2.5 rounded-lg border text-sm resize-none" style={{ borderColor: disputeDescription.trim().length > 0 && disputeDescription.trim().length < 20 ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+              {disputeDescription.trim().length > 0 && disputeDescription.trim().length < 20 && (
+                <p className="text-xs mt-1" style={{ color: '#dc2626' }}>{20 - disputeDescription.trim().length} more characters needed</p>
+              )}
+            </div>
+            <div className="mb-4 px-4 py-3 rounded-xl" style={{ backgroundColor: '#fef3c7', border: '1px solid #fde68a' }}>
+              <p className="text-xs font-bold" style={{ color: '#92400e' }}>This order will be locked</p>
+              <p className="text-xs mt-0.5" style={{ color: '#92400e' }}>Filing a dispute locks this order. Neither party can change its status until our team reviews it within 48 hours.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setDisputeOrder(null); setDisputeReason(''); setDisputeDescription('') }} className="flex-1 py-3 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+              <button onClick={handleCustomerFileDispute} disabled={!disputeReason || disputeDescription.trim().length < 20 || filingDispute} className="flex-1 py-3 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#dc2626', opacity: (!disputeReason || disputeDescription.trim().length < 20 || filingDispute) ? 0.5 : 1 }}>
+                {filingDispute ? 'Filing...' : 'File Dispute'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -730,6 +997,16 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                     </div>
                   )}
 
+                  {order.status === 'complete' && !order.delivery_proof_url && !order.is_disputed && !order.customer_confirmed_nonreceipt && (
+                    <div className="mb-4 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ backgroundColor: '#fee2e2', border: '1px solid #fecaca' }}>
+                      <div>
+                        <p className="text-xs font-semibold" style={{ color: '#991b1b' }}>Did you not receive your order?</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#7f1d1d' }}>If your order was never delivered or picked up, let us know.</p>
+                      </div>
+                      <button onClick={() => { setNonReceiptOrder(order); setNonReceiptInput('') }} className="flex-shrink-0 px-4 py-2 rounded-lg text-white text-xs font-semibold" style={{ backgroundColor: '#dc2626' }}>Report</button>
+                    </div>
+                  )}
+
                   <div className="flex gap-2 flex-wrap">
                     <Link href={'/bakers/' + order.baker_id} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>View Baker</Link>
                     <button onClick={() => openThread(order.id)} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#5c3d2e', color: '#5c3d2e' }}>Message</button>
@@ -742,6 +1019,20 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                     {order.status === 'declined' && (
                       <Link href="/bakers" className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Find Another Baker</Link>
                     )}
+                    {(order.status === 'pending' || order.status === 'confirmed') && !order.is_disputed && (
+                      <button onClick={() => { setCancelOrder(order); setCancelReason(''); setCancelDescription('') }} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Cancel Order</button>
+                    )}
+                    {order.deposit_paid_at && ['confirmed','in_progress','ready','complete'].includes(order.status) && !order.is_disputed && (
+                      <button onClick={() => { setDisputeOrder(order); setDisputeReason(''); setDisputeDescription('') }} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#92400e', color: '#92400e' }}>File Dispute</button>
+                    )}
+                    <div className="relative">
+                      <button onClick={() => setShowDotsOrderId(v => v === order.id ? null : order.id)} className="px-3 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>⋯</button>
+                      {showDotsOrderId === order.id && (
+                        <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border z-30 min-w-36 overflow-hidden" style={{ borderColor: '#e0d5cc' }}>
+                          <button onClick={() => { setShowDotsOrderId(null); setBlockBakerOrder(order) }} className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-gray-50" style={{ color: '#dc2626' }}>Block Baker</button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
