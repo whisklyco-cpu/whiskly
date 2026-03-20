@@ -40,6 +40,15 @@ export default function BakerDashboard() {
   const [isEmergencyRoster, setIsEmergencyRoster] = useState(false)
   const [emergencyWindows, setEmergencyWindows] = useState<string[]>([])
 
+  // Planned vacations
+  const [plannedVacations, setPlannedVacations] = useState<any[]>([])
+  const [vacStartDate, setVacStartDate] = useState('')
+  const [vacEndDate, setVacEndDate] = useState('')
+  const [vacLabel, setVacLabel] = useState('')
+  const [savingVacation, setSavingVacation] = useState(false)
+  const [vacConflictOrders, setVacConflictOrders] = useState<any[]>([])
+  const [pendingVacSave, setPendingVacSave] = useState<{ start: string; end: string; label: string } | null>(null)
+
   useEffect(() => {
     loadDashboard()
     const params = new URLSearchParams(window.location.search)
@@ -90,6 +99,25 @@ export default function BakerDashboard() {
       setPortfolio(portfolioData || [])
       const { data: unreadData } = await supabase.from('messages').select('id').eq('receiver_id', user.id).is('read_at', null)
       setUnreadCount((unreadData || []).length)
+      // Fetch planned vacations
+      const { data: vacData } = await supabase.from('baker_vacations').select('*').eq('baker_id', bakerData.id).order('start_date', { ascending: true })
+      setPlannedVacations(vacData || [])
+      // Vacation auto-activation
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      const todayStr = today.toISOString().split('T')[0]
+      for (const vac of (vacData || [])) {
+        if (todayStr >= vac.start_date && todayStr <= vac.end_date && !bakerData.is_on_vacation) {
+          await supabase.from('bakers').update({ is_on_vacation: true, vacation_return_date: vac.end_date }).eq('id', bakerData.id)
+          bakerData.is_on_vacation = true; bakerData.vacation_return_date = vac.end_date
+        }
+        if (todayStr > vac.end_date && bakerData.is_on_vacation && bakerData.vacation_return_date === vac.end_date) {
+          await supabase.from('bakers').update({ is_on_vacation: false, vacation_return_date: null }).eq('id', bakerData.id)
+          bakerData.is_on_vacation = false; bakerData.vacation_return_date = null
+        }
+      }
+      // Re-sync vacation state after auto-activation
+      setIsOnVacation(bakerData.is_on_vacation || false)
+      setVacationReturnDate(bakerData.vacation_return_date || '')
     }
     setLoading(false)
   }
@@ -137,6 +165,68 @@ export default function BakerDashboard() {
     setPortfolio(portfolio.filter(p => p.id !== id))
   }
 
+  async function saveVacation(force = false) {
+    if (!vacStartDate || !vacEndDate || vacEndDate <= vacStartDate) return
+    if (!force) {
+      const conflicts = orders.filter(o =>
+        ['confirmed', 'in_progress'].includes(o.status) &&
+        o.event_date >= vacStartDate && o.event_date <= vacEndDate
+      )
+      if (conflicts.length > 0) {
+        setVacConflictOrders(conflicts)
+        setPendingVacSave({ start: vacStartDate, end: vacEndDate, label: vacLabel })
+        return
+      }
+    }
+    setSavingVacation(true)
+    const { data: newVac } = await supabase.from('baker_vacations').insert({
+      baker_id: baker.id, start_date: vacStartDate, end_date: vacEndDate, label: vacLabel.trim() || null,
+    }).select().single()
+    if (newVac) setPlannedVacations(prev => [...prev, newVac].sort((a, b) => a.start_date.localeCompare(b.start_date)))
+    setVacStartDate(''); setVacEndDate(''); setVacLabel('')
+    setPendingVacSave(null); setVacConflictOrders([])
+    setSavingVacation(false)
+  }
+
+  async function deleteVacation(id: string) {
+    await supabase.from('baker_vacations').delete().eq('id', id)
+    setPlannedVacations(prev => prev.filter(v => v.id !== id))
+  }
+
+  async function checkAndExpireStrikes() {
+    const { data: bakerData } = await supabase.from('bakers').select('strike_count, strike_log, completed_orders_since_strike').eq('id', baker.id).maybeSingle()
+    if (!bakerData) return
+    const newCompletedCount = (bakerData.completed_orders_since_strike || 0) + 1
+    await supabase.from('bakers').update({ completed_orders_since_strike: newCompletedCount }).eq('id', baker.id)
+    const strikeLog: any[] = bakerData.strike_log || []
+    if (!strikeLog.length) return
+    const now = new Date()
+    let expiredCount = 0
+    const updatedLog = strikeLog.map(strike => {
+      if (strike.expired) return strike
+      const createdAt = new Date(strike.created_at)
+      const monthsDiff = (now.getFullYear() - createdAt.getFullYear()) * 12 + (now.getMonth() - createdAt.getMonth())
+      const isEmergency = (strike.reason || '').includes('emergency_pause')
+      let shouldExpire = false
+      if (isEmergency) {
+        shouldExpire = monthsDiff >= 6
+      } else if (strike.count === 1) {
+        shouldExpire = monthsDiff >= 12 || newCompletedCount >= 10
+      } else if (strike.count === 2) {
+        shouldExpire = monthsDiff >= 18 || newCompletedCount >= 20
+      }
+      // count === 3 never auto-expires
+      if (shouldExpire) { expiredCount++; return { ...strike, expired: true } }
+      return strike
+    })
+    if (expiredCount > 0) {
+      const newStrikeCount = Math.max(0, (bakerData.strike_count || 0) - expiredCount)
+      await supabase.from('bakers').update({ strike_count: newStrikeCount, strike_log: updatedLog, completed_orders_since_strike: 0 }).eq('id', baker.id)
+      setBaker((prev: any) => ({ ...prev, strike_count: newStrikeCount, strike_log: updatedLog }))
+      fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'announcement', to: baker.email || '', name: baker.business_name, subject: 'Good news — your strike' + (expiredCount > 1 ? 's have' : ' has') + ' expired on Whiskly', body: expiredCount + ' strike' + (expiredCount > 1 ? 's have' : ' has') + ' been removed from your Whiskly account. Keep up the great work!\n\nYour current strike count is now ' + newStrikeCount + '.' }) }).catch(() => {})
+    }
+  }
+
   async function updateOrderStatus(orderId: string, status: string) {
     await supabase.from('orders').update({ status }).eq('id', orderId)
     setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o))
@@ -145,6 +235,9 @@ export default function BakerDashboard() {
       if (order) {
         fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'deposit_nudge', customerEmail: order.customer_email, customerName: order.customer_name, bakerName: baker.business_name, eventType: order.event_type, eventDate: order.event_date, budget: order.budget, orderId }) }).catch(() => {})
       }
+    }
+    if (status === 'complete') {
+      checkAndExpireStrikes().catch(() => {})
     }
   }
 
@@ -164,6 +257,7 @@ export default function BakerDashboard() {
     setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'complete', delivery_proof_url: proofPhotoUrl, care_instructions: careInstructions, delivery_confirmed_at: new Date().toISOString() } : o))
     setDeliveryModalOrder(null); setDeliveryPhoto(null); setDeliveryPhotoPreview(null); setCareInstructions('')
     setSubmittingDelivery(false)
+    checkAndExpireStrikes().catch(() => {})
   }
 
   async function submitHandoff(order: any) {
@@ -867,6 +961,34 @@ async function triggerEmergencyPause() {
 
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
+      {/* Vacation Conflict Modal */}
+      {vacConflictOrders.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-bold text-lg mb-2" style={{ color: '#2d1a0e' }}>Vacation Conflict</h3>
+            <p className="text-sm mb-3" style={{ color: '#5c3d2e' }}>These confirmed or in-progress orders fall within your vacation dates. You'll need to handle them before or during your vacation:</p>
+            <div className="mb-4 flex flex-col gap-2">
+              {vacConflictOrders.map(o => (
+                <div key={o.id} className="px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>
+                  <strong>{o.customer_name}</strong> · {o.event_type} · {(() => { const [y,m,d] = o.event_date.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}) })()}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setVacConflictOrders([]); setPendingVacSave(null) }} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel — don't save</button>
+              <button onClick={async () => {
+                if (!pendingVacSave) return
+                setSavingVacation(true)
+                const { data: newVac } = await supabase.from('baker_vacations').insert({ baker_id: baker.id, start_date: pendingVacSave.start, end_date: pendingVacSave.end, label: pendingVacSave.label.trim() || null }).select().single()
+                if (newVac) setPlannedVacations(prev => [...prev, newVac].sort((a, b) => a.start_date.localeCompare(b.start_date)))
+                setVacStartDate(''); setVacEndDate(''); setVacLabel('')
+                setVacConflictOrders([]); setPendingVacSave(null); setSavingVacation(false)
+              }} className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Save anyway — I'll handle these orders</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {deliveryModalOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -1154,8 +1276,48 @@ async function triggerEmergencyPause() {
     )}
   </div>
 
+  {/* Scheduled Vacations */}
+  <div className="mt-4 pt-4 border-t" style={{ borderColor: '#e0d5cc' }}>
+    <p className="text-sm font-semibold mb-3" style={{ color: '#2d1a0e' }}>Scheduled Vacations</p>
+    {plannedVacations.length > 0 && (
+      <div className="flex flex-col gap-2 mb-3">
+        {plannedVacations.map(vac => (
+          <div key={vac.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#dbeafe', border: '1px solid #bfdbfe' }}>
+            <div>
+              {vac.label && <p className="text-xs font-semibold" style={{ color: '#1e40af' }}>{vac.label}</p>}
+              <p className="text-xs" style={{ color: '#1e3a8a' }}>
+                {(() => { const [y,m,d] = vac.start_date.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}) })()} — {(() => { const [y,m,d] = vac.end_date.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}) })()}
+              </p>
+            </div>
+            <button onClick={() => deleteVacation(vac.id)} className="text-xs font-semibold px-2 py-1 rounded-lg" style={{ color: '#991b1b', backgroundColor: '#fee2e2' }}>Remove</button>
+          </div>
+        ))}
+      </div>
+    )}
+    <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb', border: '1px solid #e0d5cc' }}>
+      <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>Add vacation</p>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs mb-1" style={{ color: '#5c3d2e' }}>Start date</label>
+          <input type="date" value={vacStartDate} onChange={e => setVacStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+        </div>
+        <div>
+          <label className="block text-xs mb-1" style={{ color: '#5c3d2e' }}>End date</label>
+          <input type="date" value={vacEndDate} onChange={e => setVacEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+        </div>
+      </div>
+      <input type="text" value={vacLabel} onChange={e => setVacLabel(e.target.value)} placeholder="Label (optional) — e.g. Family vacation" className="w-full px-3 py-2 rounded-lg border text-xs" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+      {vacStartDate && vacEndDate && vacEndDate <= vacStartDate && (
+        <p className="text-xs" style={{ color: '#dc2626' }}>End date must be after start date</p>
+      )}
+      <button onClick={() => saveVacation()} disabled={savingVacation || !vacStartDate || !vacEndDate || vacEndDate <= vacStartDate} className="px-4 py-2 rounded-lg text-xs font-semibold text-white self-start" style={{ backgroundColor: '#1e40af', opacity: (savingVacation || !vacStartDate || !vacEndDate || vacEndDate <= vacStartDate) ? 0.5 : 1 }}>
+        {savingVacation ? 'Saving...' : 'Save Vacation'}
+      </button>
+    </div>
+  </div>
+
   {/* At Capacity */}
-  <div className="p-4 rounded-xl border mb-3" style={{ borderColor: '#e0d5cc', backgroundColor: isAtCapacity ? '#fef9c3' : '#faf8f6' }}>
+  <div className="p-4 rounded-xl border mb-3 mt-4" style={{ borderColor: '#e0d5cc', backgroundColor: isAtCapacity ? '#fef9c3' : '#faf8f6' }}>
     <div className="flex items-center justify-between">
       <div>
         <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>At Capacity</p>

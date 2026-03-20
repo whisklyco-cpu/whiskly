@@ -63,9 +63,22 @@ function CustomerDashboardInner() {
   const [blockingBaker, setBlockingBaker] = useState(false)
   const [showDotsOrderId, setShowDotsOrderId] = useState<string | null>(null)
 
+  // Tip state
+  const [tipOrder, setTipOrder] = useState<any>(null)
+  const [tipSelection, setTipSelection] = useState<'10' | '15' | '20' | 'custom'>('15')
+  const [tipCustomAmount, setTipCustomAmount] = useState('')
+  const [sendingTip, setSendingTip] = useState(false)
+  const [dismissedTips, setDismissedTips] = useState<string[]>([])
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { loadDashboard() }, [])
+  useEffect(() => {
+    loadDashboard()
+    try {
+      const stored = localStorage.getItem('whiskly_dismissed_tips')
+      if (stored) setDismissedTips(JSON.parse(stored))
+    } catch {}
+  }, [])
 
   useEffect(() => {
     const tab = searchParams.get('tab')
@@ -479,6 +492,53 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
     setBlockBakerOrder(null); setBlockingBaker(false)
   }
 
+  function getTipAmountCents(order: any): number {
+    const budget = order.budget || 0
+    if (tipSelection === 'custom') return Math.round(parseFloat(tipCustomAmount || '0') * 100)
+    const pct = parseInt(tipSelection) / 100
+    return Math.round(budget * pct * 100)
+  }
+
+  async function handleSendTip() {
+    if (!tipOrder) return
+    const amountCents = getTipAmountCents(tipOrder)
+    if (amountCents < 100) return
+    setSendingTip(true)
+    try {
+      const res = await fetch('/api/stripe/tip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: tipOrder.id, tip_amount_cents: amountCents }),
+      })
+      const { client_secret, error } = await res.json()
+      if (error || !client_secret) { setSendingTip(false); return }
+      // Dynamically load Stripe.js and confirm payment
+      const { loadStripe } = await import('@stripe/stripe-js')
+      const stripeJs = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+      if (!stripeJs) { setSendingTip(false); return }
+      const { error: confirmError } = await stripeJs.confirmCardPayment(client_secret)
+      if (confirmError) { setSendingTip(false); return }
+      // Payment succeeded — update order and notify baker
+      const tipDollars = amountCents / 100
+      await supabase.from('orders').update({ tip_amount: amountCents } as any).eq('id', tipOrder.id)
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'announcement', to: tipOrder.bakers?.email || '', name: tipOrder.bakers?.business_name, subject: 'You received a tip — $' + tipDollars.toFixed(2) + ' on Whiskly', body: tipOrder.customer_name + ' left you a $' + tipDollars.toFixed(2) + ' tip for their ' + tipOrder.event_type + ' order. It goes 100% to you. Thanks for a great experience!\n\nCheck your Stripe dashboard to see the transfer.' }),
+      }).catch(() => {})
+      setOrders(prev => prev.map(o => o.id === tipOrder.id ? { ...o, tip_amount: amountCents } : o))
+      setTipOrder(null); setTipSelection('15'); setTipCustomAmount('')
+    } finally {
+      setSendingTip(false)
+    }
+  }
+
+  function dismissTip(orderId: string) {
+    const updated = [...dismissedTips, orderId]
+    setDismissedTips(updated)
+    try { localStorage.setItem('whiskly_dismissed_tips', JSON.stringify(updated)) } catch {}
+  }
+
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
   async function handleSignOut() { await supabase.auth.signOut(); router.push('/') }
@@ -619,6 +679,41 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
               <button onClick={() => { setNonReceiptOrder(null); setNonReceiptInput('') }} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
               <button onClick={handleNonReceiptConfirm} disabled={nonReceiptInput !== 'I did not receive my order' || processingNonReceipt} className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#dc2626', opacity: (nonReceiptInput !== 'I did not receive my order' || processingNonReceipt) ? 0.5 : 1 }}>
                 {processingNonReceipt ? 'Submitting...' : 'Confirm Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tip Modal */}
+      {tipOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Leave a tip</h3>
+            <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Tips go 100% to <strong>{tipOrder.bakers?.business_name}</strong>. Whiskly takes nothing.</p>
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {(['10','15','20'] as const).map(pct => {
+                const cents = Math.round((tipOrder.budget || 0) * parseInt(pct) / 100 * 100)
+                const dollars = (cents / 100).toFixed(2)
+                return (
+                  <button key={pct} onClick={() => setTipSelection(pct)} className="py-2 rounded-xl text-xs font-semibold text-center border transition-all" style={{ borderColor: tipSelection === pct ? '#2d1a0e' : '#e0d5cc', backgroundColor: tipSelection === pct ? '#2d1a0e' : 'white', color: tipSelection === pct ? 'white' : '#2d1a0e' }}>
+                    <div>{pct}%</div>
+                    <div className="opacity-75">${dollars}</div>
+                  </button>
+                )
+              })}
+              <button onClick={() => setTipSelection('custom')} className="py-2 rounded-xl text-xs font-semibold text-center border transition-all" style={{ borderColor: tipSelection === 'custom' ? '#2d1a0e' : '#e0d5cc', backgroundColor: tipSelection === 'custom' ? '#2d1a0e' : 'white', color: tipSelection === 'custom' ? 'white' : '#2d1a0e' }}>Custom</button>
+            </div>
+            {tipSelection === 'custom' && (
+              <div className="mb-4 flex items-center gap-2">
+                <span className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>$</span>
+                <input type="number" value={tipCustomAmount} onChange={e => setTipCustomAmount(e.target.value)} placeholder="0.00" min="1" step="0.01" className="flex-1 px-3 py-2 rounded-xl border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => { setTipOrder(null); setTipSelection('15'); setTipCustomAmount('') }} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+              <button onClick={handleSendTip} disabled={sendingTip || getTipAmountCents(tipOrder) < 100} className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e', opacity: (sendingTip || getTipAmountCents(tipOrder) < 100) ? 0.5 : 1 }}>
+                {sendingTip ? 'Sending...' : 'Send Tip — $' + (getTipAmountCents(tipOrder) / 100).toFixed(2)}
               </button>
             </div>
           </div>
@@ -994,6 +1089,19 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                         <p className="text-xs mt-0.5" style={{ color: '#92400e' }}>Your review helps {order.bakers?.business_name} grow their business.</p>
                       </div>
                       <button onClick={() => setReviewOrder(order)} className="flex-shrink-0 px-4 py-2 rounded-lg text-white text-xs font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Review</button>
+                    </div>
+                  )}
+
+                  {order.status === 'complete' && !order.tip_amount && !dismissedTips.includes(order.id) && (
+                    <div className="mb-4 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ backgroundColor: '#f5f0eb', border: '1px solid #e0d5cc' }}>
+                      <div>
+                        <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>Leave a tip?</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Tips go 100% to {order.bakers?.business_name}. Whiskly takes nothing.</p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => { setTipOrder(order); setTipSelection('15'); setTipCustomAmount('') }} className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Tip</button>
+                        <button onClick={() => dismissTip(order.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>No thanks</button>
+                      </div>
                     </div>
                   )}
 
