@@ -234,6 +234,19 @@ export default function BakerDashboard() {
       const order = orders.find(o => o.id === orderId)
       if (order) {
         fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'deposit_nudge', customerEmail: order.customer_email, customerName: order.customer_name, bakerName: baker.business_name, eventType: order.event_type, eventDate: order.event_date, budget: order.budget, orderId }) }).catch(() => {})
+        fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'order_accepted', customerEmail: order.customer_email, customerName: order.customer_name, bakerName: baker.business_name, eventType: order.event_type, eventDate: order.event_date, budget: order.budget, orderId }) }).catch(() => {})
+      }
+    }
+    if (status === 'declined') {
+      const order = orders.find(o => o.id === orderId)
+      if (order) {
+        fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'order_declined', customerEmail: order.customer_email, customerName: order.customer_name, bakerName: baker.business_name, eventType: order.event_type, eventDate: order.event_date, orderId }) }).catch(() => {})
+      }
+    }
+    if (status === 'ready') {
+      const order = orders.find(o => o.id === orderId)
+      if (order) {
+        fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'order_ready_customer', customerEmail: order.customer_email, customerName: order.customer_name, bakerName: baker.business_name, eventType: order.event_type, eventDate: order.event_date, fulfillmentType: order.fulfillment_type, orderId }) }).catch(() => {})
       }
     }
     if (status === 'complete') {

@@ -602,8 +602,8 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3.5 rounded-2xl shadow-lg flex items-center gap-3" style={{ backgroundColor: '#2d1a0e', color: 'white', minWidth: '300px' }}>
           <span className="text-lg">🎂</span>
           <div>
-            <p className="font-semibold text-sm">Payment successful!</p>
-            <p className="text-xs mt-0.5" style={{ color: '#e0c9b0' }}>Your order is confirmed.</p>
+            <p className="font-semibold text-sm">Order submitted!</p>
+            <p className="text-xs mt-0.5" style={{ color: '#e0c9b0' }}>Your baker will review your request soon.</p>
           </div>
           <button onClick={() => setShowSuccessToast(false)} className="ml-auto text-xs opacity-60 hover:opacity-100">✕</button>
         </div>

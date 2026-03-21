@@ -285,6 +285,152 @@ export async function POST(req: Request) {
       })
     }
 
+    // ─── Order Received (customer confirmation on submit) ────────────────────
+    if (type === 'order_received') {
+      const { itemType } = body
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `Your order request was sent to ${bakerName}`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Request Sent!</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, your order request has been sent to <strong>${bakerName}</strong>.
+            You'll hear back within 24 hours — we'll email you as soon as they respond.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px;">
+            ${detailTable([
+              { label: 'Baker', value: bakerName },
+              ...(itemType ? [{ label: 'Item', value: itemType }] : []),
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              { label: 'Budget', value: `$${budget}` },
+            ])}
+          </div>
+          <div style="margin-top: 24px;">
+            ${ctaButton('Track Your Order', `${BASE_URL}/dashboard/customer`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            While you wait, you can message ${bakerName} directly from your dashboard if you have any questions.
+          </p>
+        `)
+      })
+    }
+
+    // ─── Order Accepted (baker accepted, customer notified) ──────────────────
+    if (type === 'order_accepted') {
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `${bakerName} accepted your order!`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Your Baker Said Yes!</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Great news, ${customerName} — <strong>${bakerName}</strong> has accepted your order request.
+            Pay your deposit now to lock in your booking.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px;">
+            ${detailTable([
+              { label: 'Baker', value: bakerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              { label: 'Total Budget', value: `$${budget}` },
+              { label: 'Deposit Due', value: `$${Math.round(budget / 2)}` },
+            ])}
+          </div>
+          <div style="margin-top: 24px;">
+            ${ctaButton('Pay Deposit & Confirm Booking', `${BASE_URL}/dashboard/customer`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            Your booking is not locked in until your deposit is received. Questions? Message ${bakerName} from your dashboard.
+          </p>
+        `)
+      })
+    }
+
+    // ─── Order Declined ───────────────────────────────────────────────────────
+    if (type === 'order_declined') {
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `Update on your Whiskly order`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">An Update on Your Request</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, unfortunately ${bakerName} is unable to take your order at this time.
+            This can happen due to scheduling, capacity, or specialty fit — it's not a reflection of your request.
+          </p>
+          <p style="color: #5c3d2e; margin: 0 0 24px;">
+            The good news: there are many talented bakers on Whiskly who would love to create something special for your ${eventType}.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('Browse Other Bakers', `${BASE_URL}/bakers`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 24px;">
+            No payment was collected. Your request has been closed.
+          </p>
+        `)
+      })
+    }
+
+    // ─── Order Ready ──────────────────────────────────────────────────────────
+    if (type === 'order_ready_customer') {
+      const { fulfillmentType } = body
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `Your order is ready!`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Your Order Is Ready!</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, <strong>${bakerName}</strong> has finished your ${eventType} order.
+            ${fulfillmentType === 'delivery' ? 'Delivery details will be shared with you directly by your baker.' : 'Pickup details are available in your dashboard.'}
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px;">
+            ${detailTable([
+              { label: 'Baker', value: bakerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+            ])}
+          </div>
+          <div style="margin-top: 24px;">
+            ${ctaButton('View Your Order', `${BASE_URL}/dashboard/customer`)}
+          </div>
+        `)
+      })
+    }
+
+    // ─── Deposit Confirmed ────────────────────────────────────────────────────
+    if (type === 'deposit_confirmed') {
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `Deposit confirmed — you're all set!`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Deposit Confirmed</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, your deposit has been received and your booking with <strong>${bakerName}</strong> is confirmed.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px;">
+            ${detailTable([
+              { label: 'Baker', value: bakerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              { label: 'Total Budget', value: `$${budget}` },
+              { label: 'Deposit Paid', value: `$${Math.round(budget / 2)}` },
+              { label: 'Remainder Due', value: `$${Math.round(budget / 2)} (48 hrs before event)` },
+            ])}
+          </div>
+          <div style="margin-top: 24px;">
+            ${ctaButton('View My Order', `${BASE_URL}/dashboard/customer`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            The remaining balance will be due 48 hours before your event date. You'll receive a reminder email when it's time to pay.
+          </p>
+        `)
+      })
+    }
+
     return NextResponse.json({ success: true })
   } catch (err: any) {
     console.error('Email error:', err.message)

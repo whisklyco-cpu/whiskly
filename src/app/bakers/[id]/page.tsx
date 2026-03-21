@@ -50,10 +50,12 @@ export default function BakerProfile() {
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [currentCustomer, setCurrentCustomer] = useState<any>(null)
   const [isBlocked, setIsBlocked] = useState(false)
+  const [showAuthModal, setShowAuthModal] = useState(false)
 
   const [form, setForm] = useState({
     customer_name: '',
     email: '',
+    item_type: '',
     event_type: '',
     event_date: '',
     servings: '',
@@ -233,9 +235,14 @@ export default function BakerProfile() {
   }
 
   async function handleSubmit() {
+    if (!currentUser) {
+      setShowAuthModal(true)
+      return
+    }
     const missingFields: string[] = []
     if (!form.customer_name) missingFields.push('Your Name')
     if (!form.email) missingFields.push('Email')
+    if (!form.item_type) missingFields.push('What are you ordering')
     if (!form.event_type) missingFields.push('Event Type')
     if (!form.event_date) missingFields.push('Event Date')
     if (!form.servings) missingFields.push('Servings')
@@ -262,6 +269,7 @@ export default function BakerProfile() {
       baker_id: baker.id,
       customer_name: form.customer_name,
       customer_email: form.email,
+      item_type: form.item_type,
       event_type: form.event_type,
       event_date: form.event_date,
       servings: form.servings,
@@ -296,6 +304,21 @@ export default function BakerProfile() {
         eventDate: form.event_date,
         budget: form.budget,
         description: form.item_description,
+      })
+    }).catch(() => {})
+
+    fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'order_received',
+        customerEmail: form.email,
+        customerName: form.customer_name,
+        bakerName: baker.business_name,
+        itemType: form.item_type,
+        eventType: form.event_type,
+        eventDate: form.event_date,
+        budget: form.budget,
       })
     }).catch(() => {})
 
@@ -354,6 +377,21 @@ export default function BakerProfile() {
     )}
   </div>
 )}
+
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="font-bold text-lg mb-2" style={{ color: '#2d1a0e' }}>You need an account to place an order</h3>
+            <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>Create a free account to send your order request, track your order, and message your baker.</p>
+            <div className="flex flex-col gap-2">
+              <Link href={'/signup?redirect=/bakers/' + id} className="w-full py-3 rounded-xl text-center text-sm font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Create Account</Link>
+              <Link href={'/login?redirect=/bakers/' + id} className="w-full py-3 rounded-xl text-center text-sm font-semibold border" style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }}>Sign In</Link>
+              <button onClick={() => setShowAuthModal(false)} className="text-xs mt-1" style={{ color: '#9c7b6b' }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Message Modal */}
       {showMessageModal && (
@@ -637,10 +675,29 @@ export default function BakerProfile() {
                     </div>
 
                     <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>What are you ordering? <span style={{ color: '#dc2626' }}>*</span></label>
+                      <select value={form.item_type} onChange={e => setForm({ ...form, item_type: e.target.value })}
+                        className="w-full px-3 py-2.5 rounded-lg border text-sm"
+                        style={{ borderColor: !form.item_type && attempted ? '#dc2626' : '#e0d5cc', color: form.item_type ? '#2d1a0e' : '#9c7b6b', backgroundColor: '#faf8f6' }}>
+                        <option value="">Select item type</option>
+                        <option>Custom Cake</option>
+                        <option>Cupcakes</option>
+                        <option>Cookies</option>
+                        <option>Cake Pops</option>
+                        <option>Brownies</option>
+                        <option>Macarons</option>
+                        <option>Cheesecake</option>
+                        <option>Pie</option>
+                        <option>Assorted Desserts</option>
+                        <option>Other</option>
+                      </select>
+                    </div>
+
+                    <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Event Type <span style={{ color: '#dc2626' }}>*</span></label>
                       <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value })}
                         className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: !form.event_type && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
+                        style={{ borderColor: !form.event_type && attempted ? '#dc2626' : '#e0d5cc', color: form.event_type ? '#2d1a0e' : '#9c7b6b', backgroundColor: '#faf8f6' }}>
                         <option value="">Select event</option>
                         <option>Birthday</option>
                         <option>Wedding</option>
@@ -649,6 +706,9 @@ export default function BakerProfile() {
                         <option>Anniversary</option>
                         <option>Corporate Event</option>
                         <option>Holiday</option>
+                        <option>Just a treat for myself</option>
+                        <option>Craving something sweet</option>
+                        <option>Gift for someone</option>
                         <option>Other</option>
                       </select>
                     </div>

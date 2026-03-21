@@ -51,6 +51,20 @@ export async function POST(req: NextRequest) {
             baker: order.bakers,
           }),
         })
+        fetch(process.env.NEXT_PUBLIC_APP_URL + '/api/email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'deposit_confirmed',
+            customerEmail: order.customer_email,
+            customerName: order.customer_name,
+            bakerName: order.bakers?.business_name,
+            eventType: order.event_type,
+            eventDate: order.event_date,
+            budget: order.budget,
+            orderId: order.id,
+          }),
+        }).catch(() => {})
       }
     }
 
