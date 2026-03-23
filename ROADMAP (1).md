@@ -25,12 +25,52 @@ Last updated: March 2026
 ---
 
 ## Pre-Launch (In Progress)
-- [ ] Cancellation/dispute UI (customer + baker dashboards)
-- [ ] Order agreement/contract (auto-generated PDF on baker acceptance, free for all tiers)
-- [ ] Baker outreach email template
-- [ ] Daisy Belle Pro / Whiskly Test Free (SQL fix)
-- [ ] FAQ cleanup + em dash sweep
+- [x] Cancellation UI — baker and customer dashboards (reason required, refund policy shown)
+- [x] Dispute filing UI — baker and customer dashboards (reason + description, order locks)
+- [x] Two-step accept confirmation on baker dashboard
+- [x] Counter offer Accept/Decline UI on customer dashboard
+- [ ] Two-way ratings (baker rates customer, optional, shown to bakers on order requests) — Session 2 ready
+- [ ] Block feature (baker blocks customer silently, customer blocks baker) — Session 2 ready
+- [ ] Baker flag system (restricted reasons, 3+ flags auto-flags customer in admin) — Session 2 ready
+- [ ] Customer non-receipt confirmation + auto-resolve under $50 — Session 2 ready
+- [ ] Pre-planned vacation scheduling — Session 3
+- [ ] Strike expiry system — Session 3
 - [ ] Tips (100% to baker, prompted at order completion)
+- [ ] Order agreement/contract (auto-generated PDF on baker acceptance)
+- [ ] Daisy Belle Pro SQL fix — run: UPDATE bakers SET tier='pro' WHERE business_name='Daisy Belle Bakery'
+- [ ] support@whiskly.co setup + Resend direct send from admin panel
+
+### Dispute Automation Rules
+- Auto-refund ONLY when: delivery photo missing AND customer types confirmation AND baker has no prior disputes AND order under $50
+- Auto-strike baker when: cancels after deposit paid
+- Auto-flag customer when: 3+ flags from different bakers
+- Auto-convert emergency pause to vacation mode when: 2nd pause within 90 days
+- Auto-resolve under $50 when: all four auto-refund conditions met AND customer has fewer than 2 prior refunds
+- Auto-disable auto-resolve for: any baker with prior dispute, any customer with 2+ disputes or 2+ refunds in 6 months
+
+### Strike System
+- Strike 1: expires after 12 months OR 10 completed orders with no issues (whichever first)
+- Strike 2: expires after 18 months OR 20 completed orders with no issues
+- Strike 3: never auto-expires, requires admin review and appeal
+- Emergency pause abuse strikes: expire after 6 months
+- Completed order with no issues = Complete status + no dispute + no cancellation + customer rating 3+
+- Strikes never deleted from history, just marked inactive
+- Baker notified when strike issued AND when strike expires
+
+### Customer Trust System
+- Baker rates customer after order (optional, 1-5 stars + private note)
+- Customer rating shown to bakers on order request cards
+- Customer flag reasons (baker-only, restricted list): abusive behavior, false information on order, false dispute, repeated no-show/ghosting, attempted off-platform transaction
+- Flag visibility: admin only (until V2 when baker network visibility unlocked)
+- Auto-disable auto-resolve for customers with 2+ disputes or 2+ refunds in 6 months
+- Pattern detection: customer disputes 2+ orders → admin flagged, auto-resolve disabled
+
+### Gaming Prevention
+- No public messaging about delivery photo requirements (silent protection)
+- Customer must type "I confirm I did not receive this order" for non-receipt claim
+- Photo upload timestamp stored — flagged if uploaded 2+ hours after delivery time
+- Baker loses money on auto-refund, no upside to skipping photos
+- First photo-less refund = warning email, no strike. Second = admin review, likely strike.
 
 ---
 

@@ -3,8 +3,8 @@ import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-const FROM = 'Whiskly <onboarding@resend.dev>'
-const BASE_URL = 'https://whiskly.vercel.app'
+const FROM = 'Whiskly <hello@whiskly.co>'
+const BASE_URL = 'https://whiskly.co'
 
 function baseWrapper(content: string) {
   return `
@@ -18,7 +18,7 @@ function baseWrapper(content: string) {
       <div style="border-top: 1px solid #e0d5cc; padding: 20px 32px; text-align: center;">
         <p style="color: #9c7b6b; font-size: 12px; margin: 0;">
           Whiskly · The custom baked goods marketplace ·
-          <a href="${BASE_URL}" style="color: #9c7b6b;">whiskly.vercel.app</a>
+          <a href="${BASE_URL}" style="color: #9c7b6b;">whiskly.co</a>
         </p>
       </div>
     </div>
@@ -373,7 +373,7 @@ export async function POST(req: Request) {
       })
     }
 
-    // ─── Order Ready ──────────────────────────────────────────────────────────
+    // ─── Order Ready (customer, fulfillment-aware) ────────────────────────────
     if (type === 'order_ready_customer') {
       const { fulfillmentType } = body
       await resend.emails.send({
@@ -427,6 +427,134 @@ export async function POST(req: Request) {
           <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
             The remaining balance will be due 48 hours before your event date. You'll receive a reminder email when it's time to pay.
           </p>
+        `)
+      })
+    }
+
+    // ─── Baker Cancelled ──────────────────────────────────────────────────────
+    if (type === 'baker_cancelled') {
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `Your order with ${bakerName} has been cancelled`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Order Cancelled</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, we're sorry to let you know that ${bakerName} has had to cancel your ${eventType} order.
+            This is rare and we understand it's disappointing.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+            ${detailTable([
+              { label: 'Baker', value: bakerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+            ])}
+          </div>
+          <p style="color: #5c3d2e; margin: 0 0 24px;">
+            If a deposit was paid, a full refund has been initiated and will appear within 5–10 business days.
+            In the meantime, there are many talented bakers on Whiskly ready to help with your ${eventType}.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('Find Another Baker', `${BASE_URL}/bakers`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 24px;">
+            Questions about your refund? Contact us at hello@whiskly.co.
+          </p>
+        `)
+      })
+    }
+
+    // ─── Customer Cancelled ───────────────────────────────────────────────────
+    if (type === 'customer_cancelled') {
+      await resend.emails.send({
+        from: FROM,
+        to: bakerEmail,
+        subject: `${customerName} has cancelled their order`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Order Cancelled by Customer</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${bakerName}, ${customerName} has cancelled their ${eventType} order.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+            ${detailTable([
+              { label: 'Customer', value: customerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              ...(budget ? [{ label: 'Order Value', value: `$${budget}` }] : []),
+            ])}
+          </div>
+          <p style="color: #5c3d2e; margin: 0 0 24px;">
+            This order has been closed in your dashboard. Any payout adjustments will be reflected per Whiskly's cancellation policy.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('View My Dashboard', `${BASE_URL}/dashboard/baker`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 24px;">
+            Questions? Contact us at hello@whiskly.co.
+          </p>
+        `)
+      })
+    }
+
+    // ─── Dispute Filed ────────────────────────────────────────────────────────
+    if (type === 'dispute_filed') {
+      const { filedBy, reason } = body
+      const isFiledByCustomer = filedBy === 'customer'
+      const recipientEmail = isFiledByCustomer ? bakerEmail : customerEmail
+      const recipientName = isFiledByCustomer ? bakerName : customerName
+      const filerName = isFiledByCustomer ? customerName : bakerName
+
+      await resend.emails.send({
+        from: FROM,
+        to: recipientEmail,
+        subject: `A dispute has been filed on your order`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Dispute Filed</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${recipientName}, ${filerName} has filed a dispute on your ${eventType} order.
+            Our team will review the details and follow up within 2 business days.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+            ${detailTable([
+              { label: 'Filed By', value: filerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              ...(reason ? [{ label: 'Reason', value: reason }] : []),
+              ...(orderId ? [{ label: 'Order ID', value: orderId }] : []),
+            ])}
+          </div>
+          <p style="color: #5c3d2e; margin: 0 0 24px;">
+            Please do not take any further action on this order until the dispute is resolved.
+            You can view the full order details in your dashboard.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('View Order', isFiledByCustomer ? `${BASE_URL}/dashboard/baker` : `${BASE_URL}/dashboard/customer`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 24px;">
+            Questions? Contact our support team at hello@whiskly.co.
+          </p>
+        `)
+      })
+    }
+
+    // ─── Announcement (generic pass-through) ──────────────────────────────────
+    if (type === 'announcement') {
+      const { subject: announcementSubject, message, recipientEmail: toEmail, recipientName } = body
+      await resend.emails.send({
+        from: FROM,
+        to: toEmail || customerEmail || bakerEmail,
+        subject: announcementSubject || 'A message from Whiskly',
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">
+            ${announcementSubject || 'A message from Whiskly'}
+          </h1>
+          ${recipientName ? `<p style="color: #5c3d2e; margin: 0 0 20px;">Hi ${recipientName},</p>` : ''}
+          <div style="color: #2d1a0e; font-size: 15px; line-height: 1.7;">
+            ${message || ''}
+          </div>
+          <div style="margin-top: 32px;">
+            ${ctaButton('Visit Whiskly', BASE_URL)}
+          </div>
         `)
       })
     }

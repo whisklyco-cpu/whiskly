@@ -23,7 +23,7 @@ const emailWrapper = (content: string) => `
       ${content}
     </div>
     <div style="background:#f5f0eb;padding:20px 32px;text-align:center;">
-      <p style="margin:0;font-size:12px;color:#5c3d2e;">© 2026 Whiskly · <a href="https://whiskly.vercel.app" style="color:#5c3d2e;">whiskly.vercel.app</a></p>
+      <p style="margin:0;font-size:12px;color:#5c3d2e;">© 2026 Whiskly · <a href="https://whiskly.co" style="color:#5c3d2e;">whiskly.co</a></p>
     </div>
   </div>
 </body>
@@ -89,7 +89,7 @@ export async function GET(request: Request) {
 
     const baker = order.bakers as any
     const bakerName = baker?.business_name || 'your baker'
-    const reviewUrl = `https://whiskly.vercel.app/dashboard/customer?tab=orders&review=${order.id}`
+    const reviewUrl = `https://whiskly.co/dashboard/customer?tab=orders&review=${order.id}`
 
     const html = emailWrapper(`
       <h2 style="margin:0 0 8px;font-size:20px;color:#2d1a0e;">How did everything turn out?</h2>
@@ -126,7 +126,7 @@ export async function GET(request: Request) {
 
     try {
       await resend.emails.send({
-        from: 'Whiskly <hello@whiskly.vercel.app>',
+        from: 'Whiskly <hello@whiskly.co>',
         to: order.customer_email,
         subject: `How was your order from ${bakerName}?`,
         html,

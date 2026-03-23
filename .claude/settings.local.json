@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(npm run:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(grep -v \"^.*//.*#\")",
+      "Bash(ls /c/Users/Alex/Desktop/Whiskly-Next/whiskly/.env*)",
+      "Bash(ls /c/Users/Alex/Desktop/Whiskly-Next/whiskly/env*)",
+      "Bash(grep -rn \"Message Baker\\\\|message.*baker\\\\|MessageBaker\\\\|showMessageModal\" src/app/bakers/[id]/page.tsx)",
+      "Bash(cat /c/Users/Alex/Desktop/Whiskly-Next/whiskly/src/app/\\\\\\(bakers\\\\\\)/page.tsx)",
+      "Bash(grep -rn \"type:.*''''\" src/app/bakers/[id]/page.tsx)"
     ]
   }
 }
