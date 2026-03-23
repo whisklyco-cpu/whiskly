@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import WhisklyLogo from '@/components/WhisklyLogo'
 import { useState, useEffect } from 'react'
 import Navbar from '@/components/Navbar'
 import { supabase } from '@/lib/supabase'
@@ -373,7 +374,7 @@ export default function ForBakersPage() {
       <footer className="px-6 md:px-16 py-12" style={{ backgroundColor: '#2d1a0e' }}>
         <div className="flex flex-col md:flex-row justify-between gap-8 mb-8" style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div className="max-w-xs">
-            <p className="text-xl font-bold text-white mb-2">🎂 Whiskly</p>
+            <div className="mb-2"><WhisklyLogo variant="dark" size="md" /></div>
             <p className="text-sm" style={{ color: '#c4a882' }}>Book bakers with confidence. Clear pricing. Structured booking.</p>
           </div>
           <div className="flex gap-16 text-sm">

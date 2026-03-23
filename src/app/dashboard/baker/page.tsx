@@ -854,8 +854,8 @@ async function triggerEmergencyPause() {
               <button onClick={() => setShowDotsMenu(v => !v)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>⋯</button>
               {showDotsMenu && (
                 <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border z-30 min-w-36 overflow-hidden" style={{ borderColor: '#e0d5cc' }}>
-                  <button onClick={() => { setShowDotsMenu(false); setShowBlockModal(true) }} className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-gray-50" style={{ color: '#dc2626' }}>Block Customer</button>
-                  <button onClick={() => { setShowDotsMenu(false); setShowFlagModal(true) }} className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-gray-50 border-t" style={{ borderColor: '#f5f0eb', color: '#92400e' }}>Flag Customer</button>
+                  <button onClick={() => { setShowDotsMenu(false); setShowBlockModal(true) }} className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#faf8f6]" style={{ color: '#dc2626' }}>Block Customer</button>
+                  <button onClick={() => { setShowDotsMenu(false); setShowFlagModal(true) }} className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#faf8f6] border-t" style={{ borderColor: '#f5f0eb', color: '#92400e' }}>Flag Customer</button>
                 </div>
               )}
             </div>
@@ -1127,7 +1127,7 @@ async function triggerEmergencyPause() {
                 <div className="text-center py-12">
                   <p className="font-semibold mb-1" style={{ color: '#2d1a0e' }}>No pending requests</p>
                   <p className="text-sm mt-1 mb-4" style={{ color: '#5c3d2e' }}>Share your profile link to start getting orders</p>
-                  <div className="px-4 py-2 bg-gray-50 rounded-lg text-sm inline-block" style={{ color: '#5c3d2e' }}>{typeof window !== 'undefined' ? window.location.origin + '/bakers/' + baker?.id : ''}</div>
+                  <div className="px-4 py-2 bg-[#faf8f6] rounded-lg text-sm inline-block" style={{ color: '#5c3d2e' }}>{typeof window !== 'undefined' ? window.location.origin + '/bakers/' + baker?.id : ''}</div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">{[...pending, ...countered].slice(0, 5).map(order => <OrderCard key={order.id} order={order} />)}</div>

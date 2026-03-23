@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import WhisklyLogo from '@/components/WhisklyLogo'
 import StepOne from './steps/StepOne'
 import StepTwo from './steps/StepTwo'
 import StepThree from './steps/StepThree'
@@ -273,7 +274,7 @@ if (!bakerData.bio) {
 
         {/* Header */}
         <div className="text-center mb-8">
-          <Link href="/" className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>🎂 Whiskly</Link>
+          <Link href="/"><WhisklyLogo variant="horizontal" size="md" /></Link>
           <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Baker Application · Step {step} of {TOTAL_STEPS}</p>
         </div>
 

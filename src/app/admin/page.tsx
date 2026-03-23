@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import WhisklyLogo from '@/components/WhisklyLogo'
 import { EmergencyCase } from './components/EmergencyCase'
 import { DisputeCase } from './components/DisputeCase'
 
@@ -199,7 +200,7 @@ export default function AdminPanel() {
     <div className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
       <nav className="bg-white shadow-sm px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-lg font-bold" style={{ color: '#2d1a0e' }}>🎂 Whiskly</Link>
+          <Link href="/"><WhisklyLogo variant="horizontal" size="sm" /></Link>
           <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Admin</span>
         </div>
         <div className="flex items-center gap-3">

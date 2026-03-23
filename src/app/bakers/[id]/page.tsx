@@ -485,10 +485,10 @@ export default function BakerProfile() {
                       <span className="px-2 py-0.5 text-xs font-semibold rounded-full" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>✓ Verified</span>
                     )}
                     {baker.is_cottage_baker && (
-                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>🏠 Cottage Baker</span>
+                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Cottage Baker</span>
                     )}
                   </div>
-                  <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>📍 {baker.city}, {baker.state}</p>
+                  <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state}</p>
 
                   {avgRating && reviewCount > 0 ? (
                     <div className="flex items-center gap-2 mb-3">
@@ -573,18 +573,18 @@ export default function BakerProfile() {
             <div className="bg-white rounded-2xl p-8 shadow-sm">
               <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Service Details</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-                {baker.delivery_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>🚗</span> Delivery available</div>}
-                {baker.pickup_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>📦</span> Pickup available</div>}
+                {baker.delivery_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>Delivery available</div>}
+                {baker.pickup_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>Pickup available</div>}
                 {baker.rush_orders_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>⚡</span> Rush orders accepted</div>}
-                {baker.minimum_order > 0 && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>💵</span> ${baker.minimum_order} minimum</div>}
+                {baker.minimum_order > 0 && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>${baker.minimum_order} minimum</div>}
                 {baker.days_available?.length > 0 && (
                   <div className="flex items-center gap-2 text-sm col-span-2" style={{ color: '#5c3d2e' }}>
-                    <span>📅</span> Available: {baker.days_available.join(', ')}
+                    Available: {baker.days_available.join(', ')}
                   </div>
                 )}
                 {baker.cancellation_policy && (
                   <div className="flex items-center gap-2 text-sm col-span-2" style={{ color: '#5c3d2e' }}>
-                    <span>📋</span> {baker.cancellation_policy}
+                    {baker.cancellation_policy}
                   </div>
                 )}
               </div>
@@ -796,7 +796,7 @@ export default function BakerProfile() {
 
                     {form.fulfillment_type === 'pickup' && (
                       <div className="px-3 py-2.5 rounded-xl text-xs" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>
-                        📦 Pickup location ({baker.city}, {baker.state}) will be shared once your baker accepts your order.
+                        Pickup location ({baker.city}, {baker.state}) will be shared once your baker accepts your order.
                       </div>
                     )}
 

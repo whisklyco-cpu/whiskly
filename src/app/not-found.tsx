@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import WhisklyLogo from '@/components/WhisklyLogo'
 
 export default function NotFound() {
   return (
@@ -10,10 +11,7 @@ export default function NotFound() {
       <header style={{ backgroundColor: '#f5f0eb', borderBottom: '1px solid #e0d5cc', padding: '0 32px' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '22px' }}>🎂</span>
-            <span style={{ fontFamily: 'Georgia, serif', fontWeight: 700, fontSize: '20px', color: '#2d1a0e', letterSpacing: '0.3px' }}>
-              Whiskly
-            </span>
+            <WhisklyLogo variant="horizontal" size="sm" />
           </Link>
           <Link
             href="/bakers"

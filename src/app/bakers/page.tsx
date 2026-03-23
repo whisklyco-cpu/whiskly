@@ -265,7 +265,7 @@ export default function BrowseBakers() {
               </div>
             ) : filtered.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
-                <p className="text-4xl mb-3">🔍</p>
+                <p className="text-4xl mb-3"></p>
                 <p className="font-semibold mb-1" style={{ color: '#2d1a0e' }}>No bakers found</p>
                 <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Try adjusting your filters</p>
                 <button onClick={clearFilters} className="px-5 py-2 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Clear Filters</button>
@@ -292,14 +292,14 @@ export default function BrowseBakers() {
                           <div className="absolute top-3 left-3 px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#2d1a0e', color: 'white' }}>⭐ Pro</div>
                         )}
                         {baker.is_cottage_baker && (
-                          <div className="absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>🏠 Cottage</div>
+                          <div className="absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Cottage Baker</div>
                         )}
                       </div>
                       <div className="p-4 md:p-5">
                         <div className="flex items-start justify-between mb-1">
                           <div className="flex-1 min-w-0 pr-2">
                             <h3 className="font-bold text-base truncate" style={{ color: '#2d1a0e' }}>{baker.business_name}</h3>
-                            <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>📍 {baker.city}, {baker.state}</p>
+                            <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state}</p>
                             <StarRating rating={baker.avg_rating ?? null} count={baker.review_count ?? 0} />
                           </div>
                           {baker.starting_price && (
@@ -320,9 +320,9 @@ export default function BrowseBakers() {
                           </div>
                         )}
                         <div className="flex gap-2 flex-wrap">
-                          {baker.delivery_available && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>🚗 Delivery</span>}
+                          {baker.delivery_available && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>Delivery</span>}
                           {baker.rush_orders_available && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>⚡ Rush orders</span>}
-                          {baker.lead_time_days && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>📅 {baker.lead_time_days}d lead time</span>}
+                          {baker.lead_time_days && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>{baker.lead_time_days}d lead time</span>}
                         </div>
                       </div>
                     </div>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import WhisklyLogo from '@/components/WhisklyLogo'
 
 export default function Login() {
   const router = useRouter()
@@ -41,7 +42,7 @@ if (baker) {
       <div className="w-full max-w-md px-6">
 
         <div className="text-center mb-8">
-          <Link href="/" className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>🎂 Whiskly</Link>
+          <Link href="/"><WhisklyLogo variant="horizontal" size="md" /></Link>
           <p className="text-sm mt-2" style={{ color: '#5c3d2e' }}>Sign in to your account</p>
         </div>
 

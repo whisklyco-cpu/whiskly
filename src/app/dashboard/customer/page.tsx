@@ -1137,7 +1137,7 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                       <button onClick={() => setShowDotsOrderId(v => v === order.id ? null : order.id)} className="px-3 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>⋯</button>
                       {showDotsOrderId === order.id && (
                         <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border z-30 min-w-36 overflow-hidden" style={{ borderColor: '#e0d5cc' }}>
-                          <button onClick={() => { setShowDotsOrderId(null); setBlockBakerOrder(order) }} className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-gray-50" style={{ color: '#dc2626' }}>Block Baker</button>
+                          <button onClick={() => { setShowDotsOrderId(null); setBlockBakerOrder(order) }} className="w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#faf8f6]" style={{ color: '#dc2626' }}>Block Baker</button>
                         </div>
                       )}
                     </div>

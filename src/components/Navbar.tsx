@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import WhisklyLogo from '@/components/WhisklyLogo'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -45,8 +46,7 @@ export default function Navbar() {
       <div className="flex items-center justify-between px-5 md:px-8 py-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
-          <span className="text-2xl">🎂</span>
-          <span className="text-xl md:text-2xl font-bold" style={{ color: '#2d1a0e' }}>Whiskly</span>
+          <WhisklyLogo variant="horizontal" size="sm" />
         </Link>
 
         {/* Desktop nav */}
