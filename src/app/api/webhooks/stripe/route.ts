@@ -58,5 +58,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (event.type === 'payment_intent.succeeded') {
+    const intent = event.data.object as Stripe.PaymentIntent
+    const { order_id, type } = intent.metadata || {}
+
+    if (order_id && type === 'deposit') {
+      await supabase.from('orders').update({
+        deposit_paid_at: new Date().toISOString(),
+        status: 'confirmed',
+      }).eq('id', order_id)
+    }
+  }
+
   return NextResponse.json({ received: true })
 }
