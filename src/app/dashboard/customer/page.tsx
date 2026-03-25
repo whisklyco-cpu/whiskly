@@ -158,9 +158,7 @@ function CustomerDashboardInner() {
     const { data: customerData } = await supabase.from('customers').select('*').eq('user_id', session.user.id).maybeSingle()
     if (customerData) {
       setCustomer(customerData)
-      const { data: ordersData } = await supabase
-        .from('orders')
-        .select('*, bakers(id, business_name, profile_photo_url, city, state, pickup_address, pickup_zip)')
+      const { data: ordersData } = await supabase.from('orders').select('id, event_type, event_date, status, deposit_paid_at, amount_remainder, budget').in('id', orderIds)
         .eq('customer_email', customerData.email)
         .order('created_at', { ascending: false })
       setOrders(ordersData || [])
