@@ -84,15 +84,14 @@ function CustomerDashboardInner() {
     const tab = searchParams.get('tab')
     const orderId = searchParams.get('order')
     const success = searchParams.get('success')
+    const paid = searchParams.get('paid')
     if (tab === 'messages') setActiveTab('messages')
     if (tab === 'orders') setActiveTab('orders')
     if (orderId) setActiveOrderId(orderId)
-    if (success === '1' || searchParams.get('paid') === 'true') {
-  setShowSuccessToast(true)
-  setTimeout(() => setShowSuccessToast(false), 5000)
-  // Give the webhook a moment to update Supabase, then reload
-  setTimeout(() => loadDashboard(), 2000)
-}
+    if (success === '1' || paid === 'true') {
+      setShowSuccessToast(true)
+      setTimeout(() => setShowSuccessToast(false), 5000)
+      setTimeout(() => loadDashboard(), 1500)
     }
   }, [searchParams])
 
