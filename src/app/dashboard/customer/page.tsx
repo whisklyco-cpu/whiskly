@@ -88,8 +88,11 @@ function CustomerDashboardInner() {
     if (tab === 'orders') setActiveTab('orders')
     if (orderId) setActiveOrderId(orderId)
     if (success === '1' || searchParams.get('paid') === 'true') {
-      setShowSuccessToast(true)
-      setTimeout(() => setShowSuccessToast(false), 5000)
+  setShowSuccessToast(true)
+  setTimeout(() => setShowSuccessToast(false), 5000)
+  // Give the webhook a moment to update Supabase, then reload
+  setTimeout(() => loadDashboard(), 2000)
+}
     }
   }, [searchParams])
 
