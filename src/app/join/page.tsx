@@ -203,7 +203,6 @@ if (!bakerData.bio) {
     // Create baker profile
     const { error: bakerError } = await supabase.from('bakers').insert({
       user_id: authData.user?.id,
-      full_name: bakerData.full_name,
       business_name: bakerData.business_name,
       email: bakerData.email,
       phone: bakerData.phone,

@@ -87,7 +87,7 @@ function CustomerDashboardInner() {
     if (tab === 'messages') setActiveTab('messages')
     if (tab === 'orders') setActiveTab('orders')
     if (orderId) setActiveOrderId(orderId)
-    if (success === '1') {
+    if (success === '1' || searchParams.get('paid') === 'true') {
       setShowSuccessToast(true)
       setTimeout(() => setShowSuccessToast(false), 5000)
     }
@@ -129,6 +129,17 @@ function CustomerDashboardInner() {
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [activeOrderId, currentUserId])
+
+  useEffect(() => {
+    if (!customer?.email) return
+    const channel = supabase
+      .channel('customer-orders-' + customer.id)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: 'customer_email=eq.' + customer.email }, (payload) => {
+        setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o))
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [customer])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -343,6 +354,25 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
   function openPayment(order: any, type: 'deposit' | 'remainder') {
     setPaymentOrder(order)
     setPaymentType(type)
+  }
+
+  async function payDeposit(order: any) {
+    try {
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: order.id }),
+      })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        // Fallback to PaymentModal (baker has Stripe Connect)
+        openPayment(order, 'deposit')
+      }
+    } catch {
+      openPayment(order, 'deposit')
+    }
   }
 
   async function onPaymentSuccess() {
@@ -929,7 +959,7 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                           Pay 50% now (${(order.budget / 2).toFixed(2)}) — remainder due 48hrs before your event.
                         </p>
                       </div>
-                      <button onClick={() => openPayment(order, 'deposit')}
+                      <button onClick={() => payDeposit(order)}
                         className="flex-shrink-0 px-5 py-2.5 rounded-xl text-white text-sm font-bold"
                         style={{ backgroundColor: '#2d1a0e' }}>
                         Pay Deposit
@@ -971,7 +1001,9 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                           <p className="text-xs mb-2" style={{ color: '#6b21a8' }}>Pickup address:</p>
                           {order.bakers?.pickup_address
                             ? <a href={'https://maps.google.com/?q=' + encodeURIComponent(order.bakers.pickup_address)} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold underline" style={{ color: '#2d1a0e' }}>📍 {order.bakers.pickup_address}</a>
-                            : <p className="text-xs" style={{ color: '#5c3d2e' }}>Contact your baker for pickup details.</p>}
+                            : order.bakers?.city
+                              ? <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>📍 {order.bakers.city}, {order.bakers.state}{order.bakers.pickup_zip ? ' ' + order.bakers.pickup_zip : ''} — contact baker for exact address</p>
+                              : <p className="text-xs" style={{ color: '#5c3d2e' }}>Contact your baker for pickup details.</p>}
                         </div>
                       ) : order.fulfillment_type === 'delivery'
                         ? <p className="text-xs" style={{ color: '#6b21a8' }}>Your baker will be in touch to arrange delivery to your address.</p>
@@ -985,7 +1017,7 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                         <p className="text-white font-bold text-sm">Your order was delivered!</p>
                         <p className="text-xs mt-0.5" style={{ color: '#c4a882' }}>Thank you for using Whiskly & {order.bakers?.business_name}</p>
                       </div>
-                      <img src={order.delivery_proof_url} alt="Delivery proof" className="w-full h-40 object-cover" />
+                      <img src={order.delivery_proof_url} alt="Delivery proof" className="w-full object-contain" style={{ maxHeight: '320px', backgroundColor: '#faf8f6' }} />
                       {order.care_instructions && (
                         <div className="px-4 py-3" style={{ backgroundColor: '#faf8f6' }}>
                           <p className="text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Care & Storage</p>
@@ -1006,7 +1038,7 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                         <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>Your order is ready for pickup</p>
                         <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Your baker has prepared your order. Tap below to confirm you received it.</p>
                       </div>
-                      <img src={order.handoff_photo_url} alt="Your order" className="w-full h-36 object-cover" />
+                      <img src={order.handoff_photo_url} alt="Your order" className="w-full object-contain" style={{ maxHeight: '288px', backgroundColor: '#faf8f6' }} />
                       {order.care_instructions && (
                         <div className="px-4 py-3" style={{ backgroundColor: '#faf8f6' }}>
                           <p className="text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Care & Storage</p>

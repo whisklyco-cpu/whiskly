@@ -96,8 +96,10 @@ loadStats()
 
             {/* CTA */}
 <div className="flex gap-3 mt-6 flex-wrap">
+  <Link href="/signup" className="px-6 py-3 rounded-xl font-semibold text-sm text-white"
+    style={{ backgroundColor: '#8B4513' }}>Create Account →</Link>
   <Link href="/join" className="px-6 py-3 rounded-xl font-semibold text-sm border"
-    style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Become a Baker →</Link>
+    style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Become a Baker</Link>
 </div>
 
             {/* Stats */}

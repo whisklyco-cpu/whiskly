@@ -72,7 +72,8 @@ export default function Navbar() {
               {userType === null && (
                 <>
                   <Link href="/login" className="px-4 py-2 text-sm rounded-lg border font-medium" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Sign In</Link>
-                  <Link href="/join" className="px-4 py-2 text-sm rounded-lg text-white font-medium" style={{ backgroundColor: '#2d1a0e' }}>Get Started</Link>
+                  <Link href="/signup" className="px-4 py-2 text-sm rounded-lg border font-medium" style={{ borderColor: '#8B4513', color: '#8B4513' }}>Create Account</Link>
+                  <Link href="/join" className="px-4 py-2 text-sm rounded-lg text-white font-medium" style={{ backgroundColor: '#2d1a0e' }}>Join as Baker</Link>
                 </>
               )}
             </>
@@ -115,7 +116,8 @@ export default function Navbar() {
                 {userType === null && (
                   <>
                     <Link href="/login" onClick={() => setMenuOpen(false)} className="w-full text-center px-4 py-3 text-sm rounded-xl border font-semibold" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Sign In</Link>
-                    <Link href="/join" onClick={() => setMenuOpen(false)} className="w-full text-center px-4 py-3 text-sm rounded-xl text-white font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Get Started</Link>
+                    <Link href="/signup" onClick={() => setMenuOpen(false)} className="w-full text-center px-4 py-3 text-sm rounded-xl border font-semibold" style={{ borderColor: '#8B4513', color: '#8B4513' }}>Create Account</Link>
+                    <Link href="/join" onClick={() => setMenuOpen(false)} className="w-full text-center px-4 py-3 text-sm rounded-xl text-white font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Join as Baker</Link>
                   </>
                 )}
               </>

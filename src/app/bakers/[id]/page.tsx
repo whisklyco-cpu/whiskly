@@ -227,7 +227,8 @@ export default function BakerProfile() {
       setTimeout(() => {
         setShowMessageModal(false)
         setMessageSent(false)
-      }, 2000)
+        router.push('/dashboard/customer?tab=messages&baker=' + baker.id)
+      }, 1500)
     } catch (err) {
       console.error('Message error:', err)
     }

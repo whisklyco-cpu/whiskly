@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
-export const dynamic = 'force-dynamic'
-
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2026-02-25.clover' })
   const supabase = createClient(
@@ -16,15 +14,15 @@ export async function POST(req: NextRequest) {
   let event: Stripe.Event
 
   try {
-    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!)
+    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_CHECKOUT_WEBHOOK_SECRET!)
   } catch (err: any) {
-    console.error('Webhook signature error:', err.message)
+    console.error('Checkout webhook signature error:', err.message)
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  if (event.type === 'payment_intent.succeeded') {
-    const intent = event.data.object as Stripe.PaymentIntent
-    const { order_id, type } = intent.metadata
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session
+    const { order_id, type } = session.metadata || {}
 
     if (!order_id) return NextResponse.json({ received: true })
 
@@ -41,17 +39,8 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
 
       if (order) {
-        await fetch(process.env.NEXT_PUBLIC_APP_URL + '/api/email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'order_confirmed',
-            to: order.customer_email,
-            order,
-            baker: order.bakers,
-          }),
-        })
-        fetch(process.env.NEXT_PUBLIC_APP_URL + '/api/email', {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        await fetch(`${appUrl}/api/email`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -66,24 +55,6 @@ export async function POST(req: NextRequest) {
           }),
         }).catch(() => {})
       }
-    }
-
-    if (type === 'remainder') {
-      await supabase.from('orders').update({
-        remainder_paid_at: new Date().toISOString(),
-      }).eq('id', order_id)
-    }
-  }
-
-  if (event.type === 'payment_intent.payment_failed') {
-    const intent = event.data.object as Stripe.PaymentIntent
-    const { order_id, type } = intent.metadata
-
-    if (order_id && type === 'deposit') {
-      await supabase.from('orders').update({
-        status: 'pending',
-        deposit_payment_intent_id: null,
-      }).eq('id', order_id)
     }
   }
 

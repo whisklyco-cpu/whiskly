@@ -61,10 +61,14 @@ export default function BakerDashboard() {
   useEffect(() => {
     if (!baker) return
     const orderChannel = supabase
-      .channel('baker-new-orders-' + baker.id)
+      .channel('baker-orders-' + baker.id)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: 'baker_id=eq.' + baker.id }, (payload) => {
         setOrders(prev => [payload.new as any, ...prev])
-      }).subscribe()
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: 'baker_id=eq.' + baker.id }, (payload) => {
+        setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o))
+      })
+      .subscribe()
     const msgChannel = supabase
       .channel('baker-new-messages-' + baker.user_id)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'receiver_id=eq.' + baker.user_id }, () => {
@@ -1079,6 +1083,48 @@ async function triggerEmergencyPause() {
 
         {activeTab === 'overview' && (
           <div className="flex flex-col gap-6">
+            {(() => {
+              const completed = orders.filter(o => o.status === 'complete')
+              const totalRevenue = completed.reduce((sum, o) => sum + ((o.amount_total || (o.budget && o.budget * 100) || 0) / 100 * 0.88), 0)
+              const pendingRevenue = orders.filter(o => o.status === 'confirmed' || o.status === 'in_progress' || o.status === 'ready').reduce((sum, o) => sum + ((o.budget || 0) * 0.88), 0)
+              return (
+                <div className="bg-white rounded-2xl p-6 shadow-sm">
+                  <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Earnings Overview</h2>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="rounded-xl p-4 text-center" style={{ backgroundColor: '#f5f0eb' }}>
+                      <p className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>${totalRevenue >= 1000 ? (totalRevenue / 1000).toFixed(1) + 'K' : totalRevenue.toFixed(0)}</p>
+                      <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>Total Earned</p>
+                    </div>
+                    <div className="rounded-xl p-4 text-center" style={{ backgroundColor: '#f5f0eb' }}>
+                      <p className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>{completed.length}</p>
+                      <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>Completed Orders</p>
+                    </div>
+                    <div className="rounded-xl p-4 text-center" style={{ backgroundColor: '#f5f0eb' }}>
+                      <p className="text-2xl font-bold" style={{ color: '#8B4513' }}>${pendingRevenue >= 1000 ? (pendingRevenue / 1000).toFixed(1) + 'K' : pendingRevenue.toFixed(0)}</p>
+                      <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>In Pipeline</p>
+                    </div>
+                  </div>
+                  {completed.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold mb-2" style={{ color: '#5c3d2e' }}>Recent completed orders</p>
+                      <div className="flex flex-col gap-2">
+                        {completed.slice(0, 5).map(o => (
+                          <div key={o.id} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: '#faf8f6' }}>
+                            <div>
+                              <p className="font-medium text-xs" style={{ color: '#2d1a0e' }}>{o.customer_name}</p>
+                              <p className="text-xs" style={{ color: '#5c3d2e' }}>{o.event_type}</p>
+                            </div>
+                            <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>${((o.amount_total || (o.budget && o.budget * 100) || 0) / 100 * 0.88).toFixed(0)}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs mt-3" style={{ color: '#5c3d2e' }}>* Amounts shown after 12% platform fee. Beta period: no fees charged.</p>
+                    </div>
+                  )}
+                  {completed.length === 0 && <p className="text-sm text-center py-4" style={{ color: '#5c3d2e' }}>No completed orders yet — earnings will appear here.</p>}
+                </div>
+              )
+            })()}
             {(() => {
               const upcoming = orders.filter(o => (o.status === 'confirmed' || o.status === 'in_progress' || o.status === 'ready') && getDaysUntil(o.event_date) > 0).sort((a, b) => getDaysUntil(a.event_date) - getDaysUntil(b.event_date)).slice(0, 5)
               if (upcoming.length === 0) return null
