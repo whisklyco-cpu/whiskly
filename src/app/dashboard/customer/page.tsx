@@ -158,9 +158,11 @@ function CustomerDashboardInner() {
     const { data: customerData } = await supabase.from('customers').select('*').eq('user_id', session.user.id).maybeSingle()
     if (customerData) {
       setCustomer(customerData)
-      const { data: ordersData } = await supabase.from('orders').select('id, event_type, event_date, status, deposit_paid_at, amount_remainder, budget').in('id', orderIds)
-        .eq('customer_email', customerData.email)
-        .order('created_at', { ascending: false })
+      const { data: ordersData } = await supabase
+  .from('orders')
+  .select('*, bakers(id, business_name, profile_photo_url, city, state, pickup_address, pickup_zip)')
+  .eq('customer_email', customerData.email)
+  .order('created_at', { ascending: false })
       setOrders(ordersData || [])
       const { data: savedData } = await supabase
         .from('saved_bakers').select('baker_id').eq('customer_id', customerData.id)
@@ -195,7 +197,7 @@ function CustomerDashboardInner() {
     const orderIds = threads.filter(t => t.order_id).map(t => t.order_id)
     let ordersMap: Record<string, any> = {}
     if (orderIds.length > 0) {
-      const { data: ordersData } = await supabase.from('orders').select('id, event_type, event_date, status').in('id', orderIds)
+      const { data: ordersData } = await supabase.from('orders').select('id, event_type, event_date, status, deposit_paid_at, amount_remainder, budget').in('id', orderIds)
       for (const o of ordersData || []) ordersMap[o.id] = o
     }
     setConversations(threads.map(t => ({ ...t, order_info: t.order_id ? ordersMap[t.order_id] : null, thread_key: t.order_id || ('general-' + t.baker_id) })))
