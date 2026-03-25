@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 
@@ -66,6 +66,12 @@ export function PaymentModal({ orderId, type, amount, eventType, bakerName, onCl
   const [loadingIntent, setLoadingIntent] = useState(false)
   const [intentError, setIntentError] = useState<string | null>(null)
 
+  // Lock background scroll when modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
   async function initializePayment() {
     setLoadingIntent(true)
     setIntentError(null)
@@ -86,18 +92,30 @@ export function PaymentModal({ orderId, type, amount, eventType, bakerName, onCl
     }
   }
 
-  // Auto-initialize on mount
-  useState(() => {
+  useEffect(() => {
     initializePayment()
-  })
+  }, [])
 
+  const platformFeeCents = Math.round(amount * 0.03)
+  const totalCents = amount + platformFeeCents
   const dollars = (amount / 100).toFixed(2)
-  const label = type === 'deposit' ? `Pay $${dollars} Deposit` : `Pay $${dollars} Remaining Balance`
+  const platformFeeDollars = (platformFeeCents / 100).toFixed(2)
+  const totalDollars = (totalCents / 100).toFixed(2)
+  const label = type === 'deposit' ? `Pay $${totalDollars} Deposit` : `Pay $${totalDollars} Remaining Balance`
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-        <div className="flex items-start justify-between mb-5">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      // Close on backdrop click
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col"
+        style={{ maxHeight: '90vh' }}
+      >
+        {/* Fixed header */}
+        <div className="flex items-start justify-between p-6 pb-4">
           <div>
             <h3 className="font-bold text-lg" style={{ color: '#2d1a0e' }}>
               {type === 'deposit' ? 'Pay Deposit' : 'Pay Remaining Balance'}
@@ -109,64 +127,57 @@ export function PaymentModal({ orderId, type, amount, eventType, bakerName, onCl
           <button onClick={onClose} className="text-sm opacity-50 hover:opacity-100" style={{ color: '#2d1a0e' }}>✕</button>
         </div>
 
-        {/* Amount breakdown */}
-        <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: '#f5f0eb' }}>
-          <div className="flex justify-between text-sm">
-            <span style={{ color: '#5c3d2e' }}>{type === 'deposit' ? '50% deposit' : 'Remaining 50%'}</span>
-            <span className="font-bold" style={{ color: '#2d1a0e' }}>${dollars}</span>
+        {/* Scrollable content */}
+        <div className="overflow-y-auto px-6 pb-6 flex-1">
+          {/* Amount breakdown — single box */}
+          <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: '#f5f0eb' }}>
+            <div className="flex justify-between text-sm mb-2">
+              <span style={{ color: '#5c3d2e' }}>
+                {type === 'deposit' ? '50% deposit' : 'Remaining balance'}
+              </span>
+              <span style={{ color: '#2d1a0e' }}>${dollars}</span>
+            </div>
+            <div className="flex justify-between text-sm mb-2">
+              <span style={{ color: '#5c3d2e' }}>Platform fee (3%)</span>
+              <span style={{ color: '#2d1a0e' }}>${platformFeeDollars}</span>
+            </div>
+            <div
+              className="flex justify-between text-sm font-bold border-t pt-2 mt-2"
+              style={{ borderColor: '#e0d5cc' }}
+            >
+              <span style={{ color: '#2d1a0e' }}>Total due today</span>
+              <span style={{ color: '#2d1a0e' }}>${totalDollars}</span>
+            </div>
+            {type === 'deposit' && (
+              <p className="text-xs mt-2" style={{ color: '#8B4513' }}>
+                Remaining balance due 48 hours before your event.
+              </p>
+            )}
           </div>
-          {type === 'deposit' && (
-            <p className="text-xs mt-2" style={{ color: '#8B4513' }}>
-              Remaining balance due 48 hours before your event.
-            </p>
+
+          {loadingIntent && (
+            <div className="text-center py-8">
+              <p className="text-sm" style={{ color: '#5c3d2e' }}>Loading payment form...</p>
+            </div>
           )}
+
+          {intentError && (
+            <div className="px-4 py-3 rounded-xl text-sm mb-4" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>
+              {intentError}
+              <button onClick={initializePayment} className="ml-2 underline">Try again</button>
+            </div>
+          )}
+
+          {clientSecret && (
+            <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
+              <CheckoutForm onSuccess={onSuccess} label={label} />
+            </Elements>
+          )}
+
+          <p className="text-xs text-center mt-4" style={{ color: '#5c3d2e' }}>
+            Secured by Stripe. Whiskly never stores your card details.
+          </p>
         </div>
-        {/* Fee breakdown */}
-<div className="mb-4 p-4 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
-  <div className="flex justify-between text-sm mb-2">
-    <span style={{ color: '#5c3d2e' }}>
-      {type === 'deposit' ? '50% deposit' : 'Remaining balance'}
-    </span>
-    <span style={{ color: '#2d1a0e' }}>
-      ${(amount / 100).toFixed(2)}
-    </span>
-  </div>
-  <div className="flex justify-between text-sm mb-2">
-    <span style={{ color: '#5c3d2e' }}>Platform fee (3%)</span>
-    <span style={{ color: '#2d1a0e' }}>
-      ${(Math.round(amount * 0.03) / 100).toFixed(2)}
-    </span>
-  </div>
-  <div className="flex justify-between text-sm font-bold border-t pt-2 mt-2" style={{ borderColor: '#e0d5cc' }}>
-    <span style={{ color: '#2d1a0e' }}>Total due today</span>
-    <span style={{ color: '#2d1a0e' }}>
-      ${((amount + Math.round(amount * 0.03)) / 100).toFixed(2)}
-    </span>
-  </div>
-</div>
-
-        {loadingIntent && (
-          <div className="text-center py-8">
-            <p className="text-sm" style={{ color: '#5c3d2e' }}>Loading payment form...</p>
-          </div>
-        )}
-
-        {intentError && (
-          <div className="px-4 py-3 rounded-xl text-sm mb-4" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>
-            {intentError}
-            <button onClick={initializePayment} className="ml-2 underline">Try again</button>
-          </div>
-        )}
-
-        {clientSecret && (
-          <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
-            <CheckoutForm onSuccess={onSuccess} label={label} />
-          </Elements>
-        )}
-
-        <p className="text-xs text-center mt-4" style={{ color: '#5c3d2e' }}>
-          Secured by Stripe. Whiskly never stores your card details.
-        </p>
       </div>
     </div>
   )
