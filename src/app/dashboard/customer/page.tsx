@@ -379,12 +379,18 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
   }
 
   async function onPaymentSuccess() {
-    setPaymentOrder(null)
-    // Reload orders to reflect paid status
-    await loadDashboard()
-    setShowSuccessToast(true)
-    setTimeout(() => setShowSuccessToast(false), 4000)
+  // Update deposit_paid_at directly — don't wait for webhook
+  if (paymentOrder) {
+    await supabase.from('orders').update({
+      deposit_paid_at: new Date().toISOString(),
+      status: 'confirmed',
+    }).eq('id', paymentOrder.id)
   }
+  setPaymentOrder(null)
+  await loadDashboard()
+  setShowSuccessToast(true)
+  setTimeout(() => setShowSuccessToast(false), 4000)
+}
 
   async function acceptCounterOffer(order: any) {
     await supabase.from('orders').update({
