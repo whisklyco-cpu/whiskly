@@ -21,13 +21,19 @@ const SEASONAL_EVENTS = [
 ]
 
 export default function MarketingPortal() {
-  const [authed, setAuthed] = useState(() => {
-  if (typeof window === 'undefined') return false
-  return localStorage.getItem('marketing_authed') === 'true'
-})
+  // Auth state
+  const [session, setSession] = useState<any>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [signingIn, setSigningIn] = useState(false)
+  const [forgotSent, setForgotSent] = useState(false)
+  const [showForgot, setShowForgot] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [sendingReset, setSendingReset] = useState(false)
+
   const [activeTab, setActiveTab] = useState('Featured Bakers')
 
   const [bakers, setBakers] = useState<any[]>([])
@@ -50,15 +56,50 @@ export default function MarketingPortal() {
   const [socialBaker, setSocialBaker] = useState('')
   const [savingSocial, setSavingSocial] = useState(false)
 
-  function handleAuth() {
-  if (password === process.env.NEXT_PUBLIC_MARKETING_PASSWORD) {
-    setAuthed(true)
-    localStorage.setItem('marketing_authed', 'true')
-    loadData()
-  } else {
-    setAuthError('Incorrect password')
+  // Check for existing session on load
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setAuthLoading(false)
+      if (session) loadData()
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      if (session) loadData()
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  async function handleSignIn() {
+    if (!email.trim() || !password) return
+    setSigningIn(true)
+    setAuthError('')
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+    if (error) {
+      setAuthError('Incorrect email or password.')
+      setSigningIn(false)
+    }
+    // on success, onAuthStateChange fires and sets session automatically
   }
-}
+
+  async function handleForgotPassword() {
+    if (!forgotEmail.trim()) return
+    setSendingReset(true)
+    await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+      redirectTo: 'https://whiskly.co/marketing',
+    })
+    setForgotSent(true)
+    setSendingReset(false)
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut()
+    setSession(null)
+    setEmail('')
+    setPassword('')
+  }
 
   async function loadData() {
     setLoading(true)
@@ -116,36 +157,116 @@ export default function MarketingPortal() {
     return Math.round((Date.now() - new Date(since).getTime()) / 86400000)
   }
 
-  if (!authed) {
+  // Loading session check
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#faf8f6' }}>
+        <p className="text-sm" style={{ color: '#9c7b6b' }}>Loading...</p>
+      </div>
+    )
+  }
+
+  // Login screen
+  if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#faf8f6' }}>
         <div className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-lg flex flex-col gap-4">
-          <p className="font-bold text-lg" style={{ color: '#2d1a0e' }}>Marketing Portal</p>
-          <p className="text-sm" style={{ color: '#5c3d2e' }}>Enter your marketing password to continue.</p>
-          <div className="relative">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAuth()}
-              placeholder="Password"
-              className="w-full px-4 py-3 rounded-xl border text-sm"
-              style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }}
-            />
-            <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-xs" style={{ color: '#9c7b6b' }}>{showPassword ? 'Hide' : 'Show'}</button>
+          <div>
+            <p className="font-bold text-lg" style={{ color: '#2d1a0e' }}>Marketing Portal</p>
+            <p className="text-sm mt-1" style={{ color: '#9c7b6b' }}>Sign in to continue.</p>
           </div>
-          {authError && <p className="text-xs" style={{ color: '#dc2626' }}>{authError}</p>}
-          <button onClick={handleAuth} className="py-3 rounded-xl text-white font-semibold text-sm" style={{ backgroundColor: '#2d1a0e' }}>Enter</button>
+
+          {!showForgot ? (
+            <>
+              <div className="flex flex-col gap-3">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSignIn()}
+                  placeholder="Email"
+                  className="w-full px-4 py-3 rounded-xl border text-sm"
+                  style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }}
+                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSignIn()}
+                    placeholder="Password"
+                    className="w-full px-4 py-3 rounded-xl border text-sm"
+                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }}
+                  />
+                  <button onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3 text-xs" style={{ color: '#9c7b6b' }}>
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </div>
+
+              {authError && <p className="text-xs" style={{ color: '#dc2626' }}>{authError}</p>}
+
+              <button onClick={handleSignIn} disabled={signingIn || !email.trim() || !password}
+                className="py-3 rounded-xl text-white font-semibold text-sm"
+                style={{ backgroundColor: '#2d1a0e', opacity: (!email.trim() || !password) ? 0.4 : 1 }}>
+                {signingIn ? 'Signing in...' : 'Sign In'}
+              </button>
+
+              <button onClick={() => { setShowForgot(true); setForgotEmail(email) }}
+                className="text-xs text-center" style={{ color: '#9c7b6b' }}>
+                Forgot password?
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm" style={{ color: '#5c3d2e' }}>
+                {forgotSent
+                  ? 'Check your email for a password reset link.'
+                  : 'Enter your email and we\'ll send a reset link.'}
+              </p>
+              {!forgotSent && (
+                <>
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={e => setForgotEmail(e.target.value)}
+                    placeholder="Email"
+                    className="w-full px-4 py-3 rounded-xl border text-sm"
+                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }}
+                  />
+                  <button onClick={handleForgotPassword} disabled={sendingReset || !forgotEmail.trim()}
+                    className="py-3 rounded-xl text-white font-semibold text-sm"
+                    style={{ backgroundColor: '#2d1a0e', opacity: !forgotEmail.trim() ? 0.4 : 1 }}>
+                    {sendingReset ? 'Sending...' : 'Send Reset Link'}
+                  </button>
+                </>
+              )}
+              <button onClick={() => { setShowForgot(false); setForgotSent(false) }}
+                className="text-xs text-center" style={{ color: '#9c7b6b' }}>
+                Back to sign in
+              </button>
+            </>
+          )}
         </div>
       </div>
     )
   }
 
+  // Authenticated portal
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#faf8f6' }}>
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
           <p className="font-bold text-xl" style={{ color: '#2d1a0e' }}>Marketing Portal</p>
+          <div className="flex items-center gap-3">
+            <p className="text-xs" style={{ color: '#9c7b6b' }}>{session.user.email}</p>
+            <button onClick={handleSignOut}
+              className="text-xs px-3 py-1.5 rounded-lg border font-semibold"
+              style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+              Sign Out
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
