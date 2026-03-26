@@ -537,6 +537,317 @@ export async function POST(req: Request) {
       })
     }
 
+    // ─── Balance Warning ──────────────────────────────────────────────────────
+    if (type === 'balance_warning') {
+      const { amount } = body
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `Balance payment of $${amount} due soon for your ${eventType} order`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Balance Due Soon</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, your remaining balance of <strong>$${amount}</strong> will be automatically charged to your saved card in the next 1–2 days.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px;">
+            ${detailTable([
+              { label: 'Baker', value: bakerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              { label: 'Balance Due', value: `$${amount}` },
+            ])}
+          </div>
+          <p style="color: #5c3d2e; margin: 20px 0 0; font-size: 14px;">
+            Make sure your payment card is up to date. If you need to update it, please contact support before the charge date.
+          </p>
+          <div style="margin-top: 24px;">
+            ${ctaButton('View My Order', `${BASE_URL}/dashboard/customer`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">— The Whiskly Team</p>
+        `)
+      })
+    }
+
+    // ─── Balance Failed (48hr grace) ─────────────────────────────────────────
+    if (type === 'balance_failed') {
+      const { amount } = body
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `Action required: payment failed for your ${eventType} order`,
+        html: baseWrapper(`
+          <h1 style="color: #c0392b; font-size: 22px; margin: 0 0 8px;">Payment Failed</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, we were unable to charge your saved card for the balance on your ${eventType} order.
+            <strong>You have 48 hours to update your payment method</strong> before your order is cancelled.
+          </p>
+          <div style="background: #fee2e2; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+            ${detailTable([
+              { label: 'Baker', value: bakerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              { label: 'Amount Due', value: amount ? `$${amount}` : 'See dashboard' },
+            ])}
+          </div>
+          <div style="margin-top: 8px;">
+            ${ctaButton('Update Payment & Save Order', `${BASE_URL}/dashboard/customer`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            If you have questions, contact us immediately at support@whiskly.co. — The Whiskly Team
+          </p>
+        `)
+      })
+    }
+
+    // ─── Balance Failed Final (order cancelled) ───────────────────────────────
+    if (type === 'balance_failed_final') {
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `Your ${eventType} order has been cancelled due to non-payment`,
+        html: baseWrapper(`
+          <h1 style="color: #c0392b; font-size: 22px; margin: 0 0 8px;">Order Cancelled</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, unfortunately your ${eventType} order with <strong>${bakerName}</strong> has been cancelled because we were unable to collect the remaining balance.
+          </p>
+          <p style="color: #5c3d2e; margin: 0 0 24px;">
+            Your deposit is non-refundable per our cancellation policy. If you believe this is an error, please contact us immediately.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('Contact Support', 'mailto:support@whiskly.co')}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">— The Whiskly Team</p>
+        `)
+      })
+    }
+
+    // ─── Order Auto-Cancelled (baker didn't respond) ─────────────────────────
+    if (type === 'order_auto_cancelled') {
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `We're sorry — your request to ${bakerName} has expired`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Order Request Expired</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, unfortunately ${bakerName} was unable to respond to your ${eventType} request within 48 hours, so it has been automatically cancelled.
+          </p>
+          <p style="color: #5c3d2e; margin: 0 0 24px;">
+            No payment was collected. We're sorry for the inconvenience — there are many talented bakers on Whiskly who would love to help with your ${eventType}.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('Browse Other Bakers', `${BASE_URL}/bakers`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">— The Whiskly Team</p>
+        `)
+      })
+    }
+
+    // ─── Baker Confirmation Reminder ─────────────────────────────────────────
+    if (type === 'baker_confirmation_reminder') {
+      const { isCancellationNotice } = body
+      await resend.emails.send({
+        from: FROM,
+        to: bakerEmail,
+        subject: isCancellationNotice
+          ? `Order auto-cancelled — ${customerName}'s request has expired`
+          : `Reminder: ${customerName} is waiting for your response`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">
+            ${isCancellationNotice ? 'Order Auto-Cancelled' : 'Pending Request Reminder'}
+          </h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${bakerName}, ${isCancellationNotice
+              ? `a booking request from ${customerName} was automatically cancelled because it wasn't responded to within 48 hours.`
+              : `${customerName} is waiting for your response on their ${eventType} request. Please log in and respond as soon as possible.`}
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px;">
+            ${detailTable([
+              { label: 'Customer', value: customerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              { label: 'Budget', value: `$${budget}` },
+            ])}
+          </div>
+          ${!isCancellationNotice ? `
+          <div style="margin-top: 24px;">
+            ${ctaButton('View & Respond', `${BASE_URL}/dashboard/baker`)}
+          </div>` : ''}
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            Responding quickly improves your visibility on Whiskly. — The Whiskly Team
+          </p>
+        `)
+      })
+    }
+
+    // ─── Ingredient Release ───────────────────────────────────────────────────
+    if (type === 'ingredient_release') {
+      const { amount } = body
+      await resend.emails.send({
+        from: FROM,
+        to: bakerEmail,
+        subject: `Ingredient advance of $${amount} is on its way`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Ingredient Advance Sent</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${bakerName}, your ingredient advance of <strong>$${amount}</strong> has been transferred to your Stripe account.
+            This covers your ingredient costs for ${customerName}'s ${eventType} order.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px;">
+            ${detailTable([
+              { label: 'Customer', value: customerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              { label: 'Amount Transferred', value: `$${amount}` },
+            ])}
+          </div>
+          <div style="margin-top: 24px;">
+            ${ctaButton('View My Dashboard', `${BASE_URL}/dashboard/baker`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            Your remaining balance will be transferred 3 days after delivery confirmation. — The Whiskly Team
+          </p>
+        `)
+      })
+    }
+
+    // ─── Payout Released ─────────────────────────────────────────────────────
+    if (type === 'payout_released') {
+      const { amount } = body
+      await resend.emails.send({
+        from: FROM,
+        to: bakerEmail,
+        subject: `Payout of $${amount} sent to your account`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Payout Sent</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${bakerName}, your payout of <strong>$${amount}</strong> has been transferred to your connected bank account for ${customerName}'s ${eventType} order.
+          </p>
+          <div style="background: #f5f0eb; border-radius: 10px; padding: 20px;">
+            ${detailTable([
+              { label: 'Customer', value: customerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Amount Transferred', value: `$${amount}` },
+              { label: 'Note', value: 'Net of 10% platform commission and 5% reserve' },
+            ])}
+          </div>
+          <div style="margin-top: 24px;">
+            ${ctaButton('View Payout History', `${BASE_URL}/dashboard/baker`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            Funds typically arrive within 1–2 business days. — The Whiskly Team
+          </p>
+        `)
+      })
+    }
+
+    // ─── Review Request ───────────────────────────────────────────────────────
+    if (type === 'review_request') {
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `How was your ${eventType} order from ${bakerName}?`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Leave a Review</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, we hope your ${eventType} order from <strong>${bakerName}</strong> was a hit!
+            Your review helps other customers find great bakers and helps ${bakerName} grow their business.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('Leave Your Review', `${BASE_URL}/dashboard/customer${orderId ? `?review=${orderId}` : ''}`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            It only takes 30 seconds. — The Whiskly Team
+          </p>
+        `)
+      })
+    }
+
+    // ─── Important Date Reminder ──────────────────────────────────────────────
+    if (type === 'important_date_reminder') {
+      const { label, daysAway } = body
+      await resend.emails.send({
+        from: FROM,
+        to: customerEmail,
+        subject: `${label} is ${daysAway} days away — time to order!`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">${label} Is Coming Up</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${customerName}, <strong>${label}</strong> is ${daysAway} days away — the perfect time to book a custom cake or treat before bakers fill up.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('Browse Bakers Now', `${BASE_URL}/bakers`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            Most bakers need at least 2 weeks notice. Book early for the best selection. — The Whiskly Team
+          </p>
+        `)
+      })
+    }
+
+    // ─── Baker Performance Alert ──────────────────────────────────────────────
+    if (type === 'baker_performance_alert') {
+      const { avgResponseHours, completionRate, avgRating } = body
+      await resend.emails.send({
+        from: FROM,
+        to: bakerEmail,
+        subject: `Important: action needed on your Whiskly account`,
+        html: baseWrapper(`
+          <h1 style="color: #c0392b; font-size: 22px; margin: 0 0 8px;">Account Performance Review</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${bakerName}, our system has flagged your account for review based on recent performance metrics.
+          </p>
+          <div style="background: #fff3cd; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+            ${detailTable([
+              ...(avgResponseHours > 48 ? [{ label: 'Avg Response Time', value: `${avgResponseHours}hrs (target: under 48hrs)` }] : []),
+              ...(completionRate < 80 ? [{ label: 'Completion Rate', value: `${completionRate}% (target: 80%+)` }] : []),
+              ...(avgRating < 3.5 ? [{ label: 'Avg Rating', value: `${avgRating} stars (target: 3.5+)` }] : []),
+            ])}
+          </div>
+          <p style="color: #5c3d2e; margin: 0 0 24px;">
+            Accounts that don't improve may be suspended. Please review your dashboard and reach out to our support team if you need help improving your metrics.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('View My Dashboard', `${BASE_URL}/dashboard/baker`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
+            Questions? Contact support@whiskly.co. — The Whiskly Team
+          </p>
+        `)
+      })
+    }
+
+    // ─── Payment Issue Baker ──────────────────────────────────────────────────
+    if (type === 'payment_issue_baker') {
+      await resend.emails.send({
+        from: FROM,
+        to: bakerEmail,
+        subject: `Payment issue on ${customerName}'s order — Whiskly notified`,
+        html: baseWrapper(`
+          <h1 style="color: #2d1a0e; font-size: 22px; margin: 0 0 8px;">Customer Payment Issue</h1>
+          <p style="color: #5c3d2e; margin: 0 0 20px;">
+            Hi ${bakerName}, we're letting you know that the balance payment for ${customerName}'s ${eventType} order failed.
+            We've notified the customer and given them 48 hours to resolve the issue.
+          </p>
+          <div style="background: #fff3cd; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+            ${detailTable([
+              { label: 'Customer', value: customerName },
+              { label: 'Event Type', value: eventType },
+              { label: 'Event Date', value: eventDate },
+              { label: 'Order ID', value: orderId ? orderId.slice(0, 8) : 'N/A' },
+            ])}
+          </div>
+          <p style="color: #5c3d2e; margin: 0 0 24px;">
+            If the customer does not resolve payment within 48 hours, the order will be cancelled. Your ingredient advance is not affected — you keep it as a kill fee.
+          </p>
+          <div style="margin-top: 8px;">
+            ${ctaButton('View My Dashboard', `${BASE_URL}/dashboard/baker`)}
+          </div>
+          <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">— The Whiskly Team</p>
+        `)
+      })
+    }
+
     // ─── Announcement (generic pass-through) ──────────────────────────────────
     if (type === 'announcement') {
       const { subject: announcementSubject, message, recipientEmail: toEmail, recipientName } = body

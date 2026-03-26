@@ -1,12 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
 
 const SPECIALTIES = ['Wedding Cakes', 'Birthday Cakes', 'Custom Cookies', 'Cupcakes', 'Kids Party Cakes', 'Vegan/Gluten Free', 'Alcohol Infused', 'Breads', 'Cheesecakes', 'Macarons', 'Custom Dessert Boxes']
 const DIETARY = ['Vegan', 'Gluten Free', 'Nut Free', 'Halal', 'Kosher', 'Dairy Free']
+const SORT_OPTIONS = [
+  { value: 'top_rated', label: 'Top Rated' },
+  { value: 'newest', label: 'Newest' },
+  { value: 'price_asc', label: 'Price: Low to High' },
+  { value: 'price_desc', label: 'Price: High to Low' },
+]
 
 function StarRating({ rating, count }: { rating: number | null; count: number }) {
   if (!rating || count === 0) return null
@@ -33,24 +39,48 @@ function StarRating({ rating, count }: { rating: number | null; count: number })
   )
 }
 
+function SkeletonCard() {
+  return (
+    <div className="bg-white rounded-2xl overflow-hidden shadow-sm animate-pulse">
+      <div className="h-48" style={{ backgroundColor: '#f5f0eb' }} />
+      <div className="p-4 md:p-5">
+        <div className="h-4 rounded-full w-2/3 mb-2" style={{ backgroundColor: '#f0ebe6' }} />
+        <div className="h-3 rounded-full w-1/3 mb-3" style={{ backgroundColor: '#f0ebe6' }} />
+        <div className="h-3 rounded-full w-full mb-1.5" style={{ backgroundColor: '#f0ebe6' }} />
+        <div className="h-3 rounded-full w-4/5" style={{ backgroundColor: '#f0ebe6' }} />
+      </div>
+    </div>
+  )
+}
+
 export default function BrowseBakers() {
   const [bakers, setBakers] = useState<any[]>([])
   const [filtered, setFiltered] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [sortBy, setSortBy] = useState('top_rated')
   const [selectedSpecialty, setSelectedSpecialty] = useState('')
   const [selectedDietary, setSelectedDietary] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
   const [deliveryOnly, setDeliveryOnly] = useState(false)
   const [rushOnly, setRushOnly] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { loadBakers() }, [])
 
+  // Debounce search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [search])
+
   useEffect(() => {
     let results = [...bakers]
-    if (search) {
-      const q = search.toLowerCase()
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase()
       results = results.filter(b =>
         b.business_name?.toLowerCase().includes(q) ||
         b.city?.toLowerCase().includes(q) ||
@@ -63,13 +93,19 @@ export default function BrowseBakers() {
     if (maxPrice) results = results.filter(b => !b.starting_price || b.starting_price <= parseInt(maxPrice))
     if (deliveryOnly) results = results.filter(b => b.delivery_available)
     if (rushOnly) results = results.filter(b => b.rush_orders_available)
+
     results.sort((a, b) => {
+      // Pro bakers always first
       if (a.tier === 'pro' && b.tier !== 'pro') return -1
       if (b.tier === 'pro' && a.tier !== 'pro') return 1
-      return (b.avg_rating || 0) - (a.avg_rating || 0)
+      if (sortBy === 'top_rated') return (b.avg_rating || 0) - (a.avg_rating || 0)
+      if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      if (sortBy === 'price_asc') return (a.starting_price || 9999) - (b.starting_price || 9999)
+      if (sortBy === 'price_desc') return (b.starting_price || 0) - (a.starting_price || 0)
+      return 0
     })
     setFiltered(results)
-  }, [bakers, search, selectedSpecialty, selectedDietary, maxPrice, deliveryOnly, rushOnly])
+  }, [bakers, debouncedSearch, sortBy, selectedSpecialty, selectedDietary, maxPrice, deliveryOnly, rushOnly])
 
   async function loadBakers() {
     const { data: sessionData } = await supabase.auth.getSession()
@@ -91,6 +127,7 @@ export default function BrowseBakers() {
 
   function clearFilters() {
     setSearch('')
+    setDebouncedSearch('')
     setSelectedSpecialty('')
     setSelectedDietary('')
     setMaxPrice('')
@@ -189,39 +226,60 @@ export default function BrowseBakers() {
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-10">
 
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ color: '#2d1a0e' }}>Browse Bakers</h1>
             <p className="text-sm" style={{ color: '#5c3d2e' }}>
-              {filtered.length} baker{filtered.length !== 1 ? 's' : ''} found
+              {loading ? 'Loading...' : `${filtered.length} baker${filtered.length !== 1 ? 's' : ''} found`}
               {hasFilters && <> · <button onClick={clearFilters} className="underline font-semibold" style={{ color: '#8B4513' }}>Clear filters</button></>}
             </p>
           </div>
 
-          {/* Mobile filter button */}
-          <button
-            className="md:hidden flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm relative"
-            style={{ backgroundColor: filtersOpen ? '#2d1a0e' : 'white', color: filtersOpen ? 'white' : '#2d1a0e', border: '1px solid #e0d5cc' }}
-            onClick={() => setFiltersOpen(!filtersOpen)}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            Filters
-            {activeFilterCount > 0 && (
-              <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center"
-                style={{ backgroundColor: '#8B4513', color: 'white' }}>
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Sort dropdown */}
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value)}
+              className="hidden md:block px-3 py-2 rounded-xl border text-sm font-medium"
+              style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }}
+            >
+              {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+
+            {/* Mobile filter button */}
+            <button
+              className="md:hidden flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm relative"
+              style={{ backgroundColor: filtersOpen ? '#2d1a0e' : 'white', color: filtersOpen ? 'white' : '#2d1a0e', border: '1px solid #e0d5cc' }}
+              onClick={() => setFiltersOpen(!filtersOpen)}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center"
+                  style={{ backgroundColor: '#8B4513', color: 'white' }}>
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Mobile search bar — always visible */}
-        <div className="md:hidden mb-4">
+        <div className="md:hidden mb-3">
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search by name, city, specialty..."
             className="w-full px-4 py-3 rounded-xl border text-sm bg-white"
             style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }} />
+        </div>
+
+        {/* Mobile sort */}
+        <div className="md:hidden mb-4">
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+            className="w-full px-3 py-2.5 rounded-xl border text-sm"
+            style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }}>
+            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
         </div>
 
         {/* Mobile quick specialty pills */}
@@ -260,37 +318,48 @@ export default function BrowseBakers() {
           {/* Baker Grid */}
           <div className="flex-1 min-w-0">
             {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <p style={{ color: '#5c3d2e' }}>Loading bakers...</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+                {[1, 2, 3, 4, 5, 6].map(n => <SkeletonCard key={n} />)}
               </div>
             ) : filtered.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
-                <p className="text-4xl mb-3"></p>
+                <p className="text-4xl mb-3">🔍</p>
                 <p className="font-semibold mb-1" style={{ color: '#2d1a0e' }}>No bakers found</p>
                 <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Try adjusting your filters</p>
                 <button onClick={clearFilters} className="px-5 py-2 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Clear Filters</button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
                 {filtered.map((baker) => (
                   <Link key={baker.id} href={'/bakers/' + baker.id}>
-                    <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all group">
+                    <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all group h-full">
                       <div className="overflow-hidden relative" style={{ height: '200px', backgroundColor: '#f5f0eb' }}>
                         {baker.profile_photo_url ? (
                           <img src={baker.profile_photo_url} alt={baker.business_name}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <span className="text-5xl">🎂</span>
+                            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <circle cx="24" cy="24" r="24" fill="#e8ddd4" />
+                              <path d="M14 32c0-5.5 4.5-10 10-10s10 4.5 10 10" stroke="#9c7b6b" strokeWidth="2" strokeLinecap="round" />
+                              <circle cx="24" cy="18" r="4" stroke="#9c7b6b" strokeWidth="2" />
+                            </svg>
                           </div>
                         )}
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200"
                           style={{ backgroundColor: 'rgba(45,26,14,0.5)' }}>
                           <span className="px-4 py-2 rounded-full text-sm font-semibold text-white border-2 border-white">View Profile →</span>
                         </div>
-                        {baker.tier === 'pro' && (
-                          <div className="absolute top-3 left-3 px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#2d1a0e', color: 'white' }}>⭐ Pro</div>
-                        )}
+                        {/* Badges — top left */}
+                        <div className="absolute top-3 left-3 flex flex-col gap-1">
+                          {baker.tier === 'pro' && (
+                            <span className="px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#2d1a0e', color: 'white' }}>Pro</span>
+                          )}
+                          {baker.is_founding_baker && (
+                            <span className="px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#8B4513', color: 'white' }}>Founding Baker</span>
+                          )}
+                        </div>
+                        {/* Cottage badge — top right */}
                         {baker.is_cottage_baker && (
                           <div className="absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Cottage Baker</div>
                         )}
@@ -321,7 +390,7 @@ export default function BrowseBakers() {
                         )}
                         <div className="flex gap-2 flex-wrap">
                           {baker.delivery_available && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>Delivery</span>}
-                          {baker.rush_orders_available && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>⚡ Rush orders</span>}
+                          {baker.rush_orders_available && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Rush orders</span>}
                           {baker.lead_time_days && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>{baker.lead_time_days}d lead time</span>}
                         </div>
                       </div>
@@ -335,7 +404,7 @@ export default function BrowseBakers() {
       </div>
 
       <footer className="text-center py-8 mt-10" style={{ backgroundColor: '#2d1a0e' }}>
-        <p className="text-sm" style={{ color: '#e0d5cc' }}>© 2026 Whiskly. All rights reserved.</p>
+        <p className="text-sm" style={{ color: '#e0d5cc' }}>© 2026 Whiskly. All rights reserved. · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a></p>
       </footer>
     </main>
   )

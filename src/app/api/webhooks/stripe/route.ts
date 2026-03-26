@@ -70,5 +70,49 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (event.type === 'payment_intent.payment_failed') {
+    const intent = event.data.object as Stripe.PaymentIntent
+    const { order_id } = intent.metadata || {}
+
+    if (order_id) {
+      await supabase.from('orders').update({ status: 'payment_issue' }).eq('id', order_id)
+
+      const { data: order } = await supabase
+        .from('orders')
+        .select('*, bakers(business_name)')
+        .eq('id', order_id)
+        .maybeSingle()
+
+      if (order) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://whiskly.co'
+        await fetch(`${appUrl}/api/email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'balance_failed',
+            customerEmail: order.customer_email,
+            customerName: order.customer_name,
+            bakerName: order.bakers?.business_name,
+            eventDate: order.event_date,
+            amount: order.balance_amount || (order.budget ? order.budget * 0.5 : 0),
+            orderId: order.id,
+          }),
+        }).catch(() => {})
+      }
+    }
+  }
+
+  if (event.type === 'transfer.created') {
+    const transfer = event.data.object as Stripe.Transfer
+    const { order_id } = transfer.metadata || {}
+
+    if (order_id) {
+      await supabase.from('orders').update({
+        payout_released_at: new Date().toISOString(),
+        stripe_transfer_id: transfer.id,
+      }).eq('id', order_id)
+    }
+  }
+
   return NextResponse.json({ received: true })
 }

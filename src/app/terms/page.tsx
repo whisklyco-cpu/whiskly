@@ -46,25 +46,37 @@ Whiskly reserves the right to suspend or terminate any account at its discretion
   },
   {
     title: '6. Payments',
-    content: `Payments on Whiskly are processed through Stripe, a third-party payment processor. By making a payment, you agree to Stripe's terms of service. Whiskly does not store your payment card information.
+    content: `Payments on Whiskly are processed through Stripe, a third-party payment processor. By making a payment, you agree to Stripe's terms of service. Whiskly does not store your full payment card details.
 
-Whiskly charges a commission on transactions between customers and bakers. The commission rate is disclosed at the time of account creation and may be updated with notice.
+Payment Schedule:
+- Deposit (50%): Charged at the time a customer confirms an order. This secures the baker and initiates production.
+- Ingredient Advance: 72 hours after order confirmation, Whiskly releases 25% of the total order value directly to the baker to cover ingredient costs. This amount is non-refundable once released.
+- Balance (50%): Automatically charged to the customer's saved payment method 3 days before the event date.
 
-All prices on the Platform are set by bakers. Whiskly does not control baker pricing.`
+Whiskly charges a platform commission on baker payouts: 10% for standard bakers and 7% for Pro bakers. An additional 5% of each payout is held in a reserve balance and released annually. All prices on the Platform are set by bakers. Whiskly does not control baker pricing.
+
+Instant Payouts: Bakers who have completed 20 or more orders with no unresolved disputes may enable instant payouts. A 1% fee applies to instant payouts, deducted from the baker's payout.
+
+Failed Payments: If a customer's payment fails, the customer has 48 hours to update their payment method. If the payment is not resolved within 48 hours, the order will be automatically cancelled. The ingredient advance already transferred to the baker is non-refundable and serves as a kill fee for the baker's preparation costs.`
   },
   {
     title: '7. Cancellation and Refund Policy',
     content: `The following cancellation and refund policy applies to all orders placed through the Platform:
 
 Baker Cancellations:
-- If a baker cancels a confirmed order, the customer will receive a full refund of any amounts paid, including the deposit. Processing fees may apply.
-- A baker who cancels a confirmed order within 48 hours of the event date will receive a cancellation strike on their account.
+- If a baker cancels a confirmed order before the ingredient advance has been released (within 72 hours of confirmation), the customer will receive a full refund of the deposit.
+- If a baker cancels after the ingredient advance has been released, the customer will receive a refund of the deposit minus the ingredient advance amount, which the baker retains as a kill fee for materials already purchased.
+- A baker who cancels a confirmed order within 7 days of the event date will receive a strike on their account.
 - Repeated cancellations may result in account suspension or removal from the Platform.
 
 Customer Cancellations:
-- If a customer cancels more than 7 days before the event date, the deposit is non-refundable but the remaining balance will not be charged.
-- If a customer cancels within 7 days of the event date, the full order amount may be charged at the baker's discretion, depending on materials already purchased.
+- If a customer cancels more than 7 days before the event date, the deposit (minus any ingredient advance already released) is non-refundable. The remaining balance will not be charged.
+- If a customer cancels within 7 days of the event date, the full order amount may be charged at Whiskly's discretion based on the baker's incurred costs.
 - Cancellation requests must be submitted through the Platform.
+
+Auto-Cancellation:
+- Order requests not accepted by a baker within 48 hours are automatically cancelled with no charge to the customer.
+- Orders with unresolved payment failures after the 48-hour grace period are automatically cancelled.
 
 Quality Disputes:
 - If a customer believes the delivered product materially differs from what was agreed upon, they must contact Whiskly support within 24 hours of delivery or pickup.
@@ -128,7 +140,7 @@ You waive any right to participate in a class action lawsuit or class-wide arbit
   },
   {
     title: '15. Contact',
-    content: `For questions about these Terms, please contact us at legal@whiskly.com.`
+    content: `For questions about these Terms, please contact us at support@whiskly.co.`
   },
 ]
 
@@ -166,7 +178,7 @@ export default function TermsPage() {
         <div className="mt-10 rounded-2xl p-6 text-center" style={{ backgroundColor: '#2d1a0e' }}>
           <p className="text-white font-semibold mb-2">Have questions about our Terms?</p>
           <p className="text-sm mb-4" style={{ color: '#c4a882' }}>We're happy to explain anything in plain language.</p>
-          <a href="mailto:legal@whiskly.com"
+          <a href="mailto:support@whiskly.co"
             className="inline-block px-6 py-3 rounded-xl font-semibold text-sm"
             style={{ backgroundColor: '#8B4513', color: 'white' }}>
             Contact Us
@@ -211,7 +223,7 @@ export default function TermsPage() {
           </div>
         </div>
         <p className="text-sm border-t pt-6" style={{ color: '#c4a882', borderColor: '#4a2e1a', maxWidth: '1280px', margin: '0 auto' }}>
-          © 2026 Whiskly. All rights reserved. · Currently in Beta
+          © 2026 Whiskly. All rights reserved. · Currently in Beta · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
         </p>
       </footer>
     </main>

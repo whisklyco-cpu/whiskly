@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 
 function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
@@ -29,6 +29,9 @@ function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
 export default function BakerProfile() {
   const { id } = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const reorderId = searchParams.get('reorder')
+  const [reorderBanner, setReorderBanner] = useState(false)
   const [baker, setBaker] = useState<any>(null)
   const [portfolio, setPortfolio] = useState<any[]>([])
   const [reviews, setReviews] = useState<any[]>([])
@@ -157,6 +160,37 @@ export default function BakerProfile() {
 
   useEffect(() => { loadBaker() }, [id])
 
+  useEffect(() => {
+    if (!reorderId) return
+    async function prefillReorder() {
+      const { data: prevOrder } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', reorderId)
+        .maybeSingle()
+      if (!prevOrder) return
+      setForm(f => ({
+        ...f,
+        customer_name: prevOrder.customer_name || '',
+        email: prevOrder.customer_email || '',
+        item_type: prevOrder.item_type || '',
+        event_type: prevOrder.event_type || '',
+        servings: prevOrder.servings?.toString() || '',
+        budget: prevOrder.budget?.toString() || '',
+        flavor_preferences: prevOrder.flavor_preferences || '',
+        allergen_notes: prevOrder.allergen_notes || '',
+        fulfillment_type: prevOrder.fulfillment_type || '',
+        delivery_address: prevOrder.delivery_address || '',
+        delivery_city: prevOrder.delivery_city || '',
+        delivery_state: prevOrder.delivery_state || '',
+        delivery_zip: prevOrder.delivery_zip || '',
+        item_description: prevOrder.item_description || '',
+      }))
+      setReorderBanner(true)
+    }
+    prefillReorder()
+  }, [reorderId])
+
   async function loadBaker() {
     const { data: bakerData } = await supabase
       .from('bakers').select('*').eq('id', id).single()
@@ -284,6 +318,7 @@ export default function BakerProfile() {
       item_description: form.item_description,
       status: 'pending',
       inspiration_photo_urls: [],
+      ...(reorderId ? { reorder_of: reorderId } : {}),
     }).select().single()
 
     if (newOrder && inspirationFiles.length > 0) {
@@ -653,6 +688,12 @@ export default function BakerProfile() {
                   <h3 className="font-bold text-lg mb-0.5" style={{ color: '#2d1a0e' }}>Start Your Order</h3>
                   <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>Describe your vision — no payment until your baker confirms</p>
                   <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>Fields marked <span style={{ color: '#dc2626' }}>*</span> are required</p>
+                  {reorderBanner && (
+                    <div className="mb-4 rounded-xl px-4 py-3 flex items-center gap-3" style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa' }}>
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l1.7 3.5 3.8.6-2.8 2.7.7 3.9L8 10.5l-3.4 1.7.7-3.9L2.5 5.6l3.8-.6z" fill="#c2410c" /></svg>
+                      <p className="text-xs font-semibold" style={{ color: '#c2410c' }}>Pre-filled from your previous order — update any details and hit Send!</p>
+                    </div>
+                  )}
 
                   {formError && (
                     <div className="mb-3 px-4 py-3 rounded-xl text-xs font-medium" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>
@@ -874,7 +915,7 @@ export default function BakerProfile() {
       </div>
 
       <footer className="text-center py-8 mt-10" style={{ backgroundColor: '#2d1a0e' }}>
-        <p className="text-sm" style={{ color: '#e0d5cc' }}>© 2026 Whiskly. All rights reserved.</p>
+        <p className="text-sm" style={{ color: '#e0d5cc' }}>© 2026 Whiskly. All rights reserved. · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a></p>
       </footer>
     </main>
   )

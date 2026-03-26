@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import AdsTab from '@/components/marketing/AdsTab'
 
-const TABS = ['Featured Bakers', 'Campaigns', 'Social Log', 'Seasonal', 'Content Hub']
+const TABS = ['Featured Bakers', 'Campaigns', 'Social Log', 'Seasonal', 'Content Hub', 'Paid Ads']
 
 const SOCIAL_PLATFORMS = ['Instagram', 'Threads', 'TikTok', 'Facebook', 'Lemon8']
 const CAMPAIGN_TYPES = ['Email blast', 'Featured rotation', 'Seasonal push', 'New baker spotlight', 'Holiday campaign', 'Other']
@@ -20,7 +21,10 @@ const SEASONAL_EVENTS = [
 ]
 
 export default function MarketingPortal() {
-  const [authed, setAuthed] = useState(false)
+  const [authed, setAuthed] = useState(() => {
+  if (typeof window === 'undefined') return false
+  return localStorage.getItem('marketing_authed') === 'true'
+})
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [authError, setAuthError] = useState('')
@@ -30,6 +34,8 @@ export default function MarketingPortal() {
   const [featuredBakers, setFeaturedBakers] = useState<any[]>([])
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [socialLogs, setSocialLogs] = useState<any[]>([])
+  const [adLogs, setAdLogs] = useState<any[]>([])
+  const [creditLogs, setCreditLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
   // Campaign form
@@ -45,13 +51,14 @@ export default function MarketingPortal() {
   const [savingSocial, setSavingSocial] = useState(false)
 
   function handleAuth() {
-    if (password === process.env.NEXT_PUBLIC_MARKETING_PASSWORD) {
-      setAuthed(true)
-      loadData()
-    } else {
-      setAuthError('Incorrect password')
-    }
+  if (password === process.env.NEXT_PUBLIC_MARKETING_PASSWORD) {
+    setAuthed(true)
+    localStorage.setItem('marketing_authed', 'true')
+    loadData()
+  } else {
+    setAuthError('Incorrect password')
   }
+}
 
   async function loadData() {
     setLoading(true)
@@ -65,6 +72,8 @@ export default function MarketingPortal() {
     const logs = logsData || []
     setCampaigns(logs.filter((l: any) => l.type === 'campaign'))
     setSocialLogs(logs.filter((l: any) => l.type === 'social'))
+    setAdLogs(logs.filter((l: any) => l.type === 'paid_ad'))
+    setCreditLogs(logs.filter((l: any) => ['ad_credit', 'promo'].includes(l.type)))
     setLoading(false)
   }
 
@@ -344,6 +353,12 @@ export default function MarketingPortal() {
             </div>
           </div>
         )}
+
+        {/* Paid Ads */}
+        {activeTab === 'Paid Ads' && !loading && (
+          <AdsTab adLogs={adLogs} creditLogs={creditLogs} onRefresh={loadData} />
+        )}
+
       </div>
     </div>
   )

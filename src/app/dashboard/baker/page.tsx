@@ -39,6 +39,8 @@ export default function BakerDashboard() {
   const [savingStatus, setSavingStatus] = useState(false)
   const [isEmergencyRoster, setIsEmergencyRoster] = useState(false)
   const [emergencyWindows, setEmergencyWindows] = useState<string[]>([])
+  const [payouts, setPayouts] = useState<any[]>([])
+  const [togglingInstantPayout, setTogglingInstantPayout] = useState(false)
 
   // Planned vacations
   const [plannedVacations, setPlannedVacations] = useState<any[]>([])
@@ -103,6 +105,9 @@ export default function BakerDashboard() {
       setPortfolio(portfolioData || [])
       const { data: unreadData } = await supabase.from('messages').select('id').eq('receiver_id', user.id).is('read_at', null)
       setUnreadCount((unreadData || []).length)
+      // Fetch payout history
+      const { data: payoutData } = await supabase.from('payout_schedule').select('*').eq('baker_id', bakerData.id).order('created_at', { ascending: false }).limit(10)
+      setPayouts(payoutData || [])
       // Fetch planned vacations
       const { data: vacData } = await supabase.from('baker_vacations').select('*').eq('baker_id', bakerData.id).order('start_date', { ascending: true })
       setPlannedVacations(vacData || [])
@@ -195,6 +200,15 @@ export default function BakerDashboard() {
   async function deleteVacation(id: string) {
     await supabase.from('baker_vacations').delete().eq('id', id)
     setPlannedVacations(prev => prev.filter(v => v.id !== id))
+  }
+
+  async function toggleInstantPayout() {
+    if (!baker?.instant_payout_eligible) return
+    setTogglingInstantPayout(true)
+    const newVal = !baker.instant_payout_enabled
+    await supabase.from('bakers').update({ instant_payout_enabled: newVal }).eq('id', baker.id)
+    setBaker((prev: any) => ({ ...prev, instant_payout_enabled: newVal }))
+    setTogglingInstantPayout(false)
   }
 
   async function checkAndExpireStrikes() {
@@ -1125,6 +1139,62 @@ async function triggerEmergencyPause() {
                 </div>
               )
             })()}
+
+            {/* Reserve Balance & Payouts */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Payouts & Reserve</h2>
+              <div className="grid grid-cols-2 gap-4 mb-5">
+                <div className="rounded-xl p-4" style={{ backgroundColor: '#f5f0eb' }}>
+                  <p className="text-xs mb-1" style={{ color: '#5c3d2e' }}>Reserve Balance (held by Whiskly)</p>
+                  <p className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>${((baker?.baker_reserve_balance || 0)).toFixed(2)}</p>
+                  <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>5% of each payout · released annually</p>
+                </div>
+                <div className="rounded-xl p-4" style={{ backgroundColor: '#f5f0eb' }}>
+                  <p className="text-xs mb-1" style={{ color: '#5c3d2e' }}>Instant Payout</p>
+                  {baker?.instant_payout_eligible ? (
+                    <div className="flex items-center gap-3 mt-1">
+                      <button
+                        onClick={toggleInstantPayout}
+                        disabled={togglingInstantPayout}
+                        className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                        style={{ backgroundColor: baker?.instant_payout_enabled ? '#8B4513' : '#d6ccc4' }}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${baker?.instant_payout_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                      <span className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{baker?.instant_payout_enabled ? 'On' : 'Off'}</span>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm font-semibold mt-1" style={{ color: '#5c3d2e' }}>Not yet eligible</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Requires 20+ completed orders and 0 disputes</p>
+                    </div>
+                  )}
+                  {baker?.instant_payout_enabled && <p className="text-xs mt-2" style={{ color: '#5c3d2e' }}>1% fee deducted per instant payout</p>}
+                </div>
+              </div>
+              {payouts.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold mb-2" style={{ color: '#5c3d2e' }}>Recent payouts</p>
+                  <div className="flex flex-col gap-2">
+                    {payouts.map(p => (
+                      <div key={p.id} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: '#faf8f6' }}>
+                        <div>
+                          <p className="text-xs font-medium" style={{ color: '#2d1a0e' }}>{p.tranche === 'ingredient_release' ? 'Ingredient advance' : 'Final payout'}</p>
+                          <p className="text-xs" style={{ color: '#5c3d2e' }}>{new Date(p.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>${(p.amount / 100).toFixed(2)}</p>
+                          <p className="text-xs" style={{ color: p.status === 'paid' ? '#15803d' : '#5c3d2e' }}>{p.status}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-center py-2" style={{ color: '#5c3d2e' }}>No payouts yet — they will appear here after your first completed order.</p>
+              )}
+            </div>
+
             {(() => {
               const upcoming = orders.filter(o => (o.status === 'confirmed' || o.status === 'in_progress' || o.status === 'ready') && getDaysUntil(o.event_date) > 0).sort((a, b) => getDaysUntil(a.event_date) - getDaysUntil(b.event_date)).slice(0, 5)
               if (upcoming.length === 0) return null

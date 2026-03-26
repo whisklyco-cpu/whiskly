@@ -6,14 +6,11 @@ import Link from 'next/link'
 import WhisklyLogo from '@/components/WhisklyLogo'
 import { EmergencyCase } from './components/EmergencyCase'
 import { DisputeCase } from './components/DisputeCase'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
-const TABS = ['Overview', 'Orders', 'Bakers', 'Customers', 'Disputes', 'Applications', 'Emergency', 'Accounting']
+const TABS = ['Overview', 'Orders', 'Bakers', 'Customers', 'Disputes', 'Applications', 'Emergency', 'Accounting', 'Earnings', 'Broadcast', 'Reviews']
 
 export default function AdminPanel() {
-  const [authed, setAuthed] = useState(false)
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [authError, setAuthError] = useState('')
   const [activeTab, setActiveTab] = useState('Overview')
 
   const [orders, setOrders] = useState<any[]>([])
@@ -22,34 +19,41 @@ export default function AdminPanel() {
   const [emergencyCases, setEmergencyCases] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
+  const [reviews, setReviews] = useState<any[]>([])
+
+  useEffect(() => { loadAll() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const [orderSearch, setOrderSearch] = useState('')
   const [bakerSearch, setBakerSearch] = useState('')
   const [customerSearch, setCustomerSearch] = useState('')
   const [orderStatusFilter, setOrderStatusFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [broadcastSubject, setBroadcastSubject] = useState('')
+  const [broadcastBody, setBroadcastBody] = useState('')
+  const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'bakers' | 'customers'>('all')
+  const [broadcastSending, setBroadcastSending] = useState(false)
+  const [broadcastSent, setBroadcastSent] = useState(false)
 
-  function handleAuth() {
-    if (password === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
-      setAuthed(true)
-      loadAll()
-    } else {
-      setAuthError('Incorrect password.')
-    }
+  async function handleLogout() {
+    await fetch('/api/admin/logout', { method: 'POST' })
+    window.location.href = '/admin/login'
   }
 
   async function loadAll() {
     setLoading(true)
-    const [ordersRes, bakersRes, customersRes, emergencyRes] = await Promise.all([
+    const [ordersRes, bakersRes, customersRes, emergencyRes, reviewsRes] = await Promise.all([
       supabase.from('orders').select('*, bakers(id, business_name, city, state, is_pro, stripe_account_id)').order('created_at', { ascending: false }),
       supabase.from('bakers').select('*').order('created_at', { ascending: false }),
       supabase.from('customers').select('*').order('created_at', { ascending: false }),
       supabase.from('emergency_cases').select('*, bakers(business_name, email, city, state)').eq('status', 'open').order('created_at', { ascending: false }),
+      supabase.from('reviews').select('*, bakers(business_name)').order('created_at', { ascending: false }),
     ])
     setOrders(ordersRes.data || [])
     setBakers(bakersRes.data || [])
     setCustomers(customersRes.data || [])
     setEmergencyCases(emergencyRes.data || [])
+    setReviews(reviewsRes.data || [])
     setLoading(false)
   }
 
@@ -138,6 +142,28 @@ export default function AdminPanel() {
     }
   }
 
+  async function sendBroadcast() {
+    if (!broadcastSubject.trim() || !broadcastBody.trim()) return
+    if (!confirm('Send broadcast to ' + broadcastTarget + '?')) return
+    setBroadcastSending(true)
+    const recipients: string[] = []
+    if (broadcastTarget === 'bakers' || broadcastTarget === 'all') {
+      bakers.filter(b => b.is_active && !b.is_suspended).forEach(b => recipients.push(JSON.stringify({ email: b.email, name: b.business_name })))
+    }
+    if (broadcastTarget === 'customers' || broadcastTarget === 'all') {
+      customers.filter(c => !c.is_suspended).forEach(c => recipients.push(JSON.stringify({ email: c.email, name: c.full_name })))
+    }
+    for (const r of recipients) {
+      const { email, name } = JSON.parse(r)
+      await fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'announcement', to: email, name, subject: broadcastSubject, body: broadcastBody }) }).catch(() => {})
+    }
+    setBroadcastSending(false)
+    setBroadcastSent(true)
+    setBroadcastSubject('')
+    setBroadcastBody('')
+    setTimeout(() => setBroadcastSent(false), 4000)
+  }
+
   function getFilteredOrders() {
     return orders.filter(o => {
       if (dateFrom && o.created_at < dateFrom) return false
@@ -175,27 +201,6 @@ export default function AdminPanel() {
   const pendingApplications = bakers.filter(b => !b.is_active || !b.profile_complete)
   const proCount = bakers.filter(b => b.is_pro).length
 
-  if (!authed) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
-        <div className="bg-white rounded-2xl p-8 shadow-sm w-full max-w-sm">
-          <h1 className="text-2xl font-bold mb-1" style={{ color: '#2d1a0e' }}>Admin Panel</h1>
-          <p className="text-sm mb-6" style={{ color: '#5c3d2e' }}>Whiskly internal access only</p>
-          <div className="relative mb-3">
-            <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAuth()} placeholder="Enter admin password" className="w-full px-4 py-3 rounded-xl border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-xs font-semibold" style={{ color: '#5c3d2e' }}>{showPassword ? 'Hide' : 'Show'}</button>
-          </div>
-          {authError && <p className="text-xs mb-3" style={{ color: '#dc2626' }}>{authError}</p>}
-          <button onClick={handleAuth} className="w-full py-3 rounded-xl text-white font-semibold text-sm" style={{ backgroundColor: '#2d1a0e' }}>Sign In</button>
-          <p className="text-xs text-center mt-4" style={{ color: '#9c7b6b' }}>
-            To change your password, update NEXT_PUBLIC_ADMIN_PASSWORD in your{' '}
-            <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="underline">Vercel environment variables</a>.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
       <nav className="bg-white shadow-sm px-8 py-4 flex items-center justify-between">
@@ -219,7 +224,7 @@ export default function AdminPanel() {
               {pendingApplications.length} application{pendingApplications.length > 1 ? 's' : ''} — click to review
             </button>
           )}
-          <button onClick={() => setAuthed(false)} className="px-3 py-1.5 rounded-lg border text-xs font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Sign Out</button>
+          <button onClick={handleLogout} className="px-3 py-1.5 rounded-lg border text-xs font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Sign Out</button>
         </div>
       </nav>
 
@@ -538,6 +543,140 @@ export default function AdminPanel() {
                 setBakers(bakers.map(b => b.id === ec.baker_id ? { ...b, is_emergency_pause: false } : b))
               }} />
             ))}
+          </div>
+        )}
+
+        {activeTab === 'Earnings' && (() => {
+          const monthMap: Record<string, { gmv: number; commission: number }> = {}
+          orders.filter(o => o.deposit_paid_at).forEach(o => {
+            const key = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+            if (!monthMap[key]) monthMap[key] = { gmv: 0, commission: 0 }
+            const total = (o.amount_total || (o.budget * 100) || 0) / 100
+            const rate = o.bakers?.is_pro ? 0.07 : 0.10
+            monthMap[key].gmv += total
+            monthMap[key].commission += total * rate
+          })
+          const chartData = Object.entries(monthMap).slice(-12).map(([month, v]) => ({ month, GMV: +v.gmv.toFixed(2), Commission: +v.commission.toFixed(2) }))
+          const totalReserve = bakers.reduce((s, b) => s + (b.baker_reserve_balance || 0), 0)
+          return (
+            <div className="flex flex-col gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'All-time GMV', value: '$' + totalGMV.toFixed(2) },
+                  { label: 'All-time Commission', value: '$' + totalCommission.toFixed(2) },
+                  { label: 'Total Reserve Held', value: '$' + totalReserve.toFixed(2) },
+                  { label: 'Avg Commission Rate', value: bakers.length ? ((bakers.filter(b => b.is_pro).length / bakers.length) * 7 + (1 - bakers.filter(b => b.is_pro).length / bakers.length) * 10).toFixed(1) + '%' : '10%' },
+                ].map(s => (
+                  <div key={s.label} className="bg-white rounded-2xl p-5 shadow-sm">
+                    <p className="text-xs font-semibold mb-1" style={{ color: '#5c3d2e' }}>{s.label}</p>
+                    <p className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>{s.value}</p>
+                  </div>
+                ))}
+              </div>
+              {chartData.length > 0 && (
+                <div className="bg-white rounded-2xl p-6 shadow-sm">
+                  <h2 className="text-lg font-bold mb-6" style={{ color: '#2d1a0e' }}>Monthly Revenue</h2>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={chartData} margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe6" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#5c3d2e' }} />
+                      <YAxis tick={{ fontSize: 11, fill: '#5c3d2e' }} tickFormatter={v => '$' + v} />
+                      <Tooltip formatter={(v) => '$' + (typeof v === 'number' ? v.toFixed(2) : v)} contentStyle={{ borderRadius: 8, border: '1px solid #e0d5cc', fontSize: 12 }} />
+                      <Bar dataKey="GMV" fill="#c4a882" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Commission" fill="#8B4513" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div className="flex gap-4 mt-3 justify-center">
+                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#c4a882' }} /><span className="text-xs" style={{ color: '#5c3d2e' }}>GMV</span></div>
+                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#8B4513' }} /><span className="text-xs" style={{ color: '#5c3d2e' }}>Commission</span></div>
+                  </div>
+                </div>
+              )}
+              <div className="bg-white rounded-2xl p-6 shadow-sm">
+                <h2 className="text-sm font-bold mb-3" style={{ color: '#2d1a0e' }}>Reserve Balance by Baker</h2>
+                <div className="flex flex-col gap-2">
+                  {bakers.filter(b => (b.baker_reserve_balance || 0) > 0).map(b => (
+                    <div key={b.id} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ backgroundColor: '#faf8f6' }}>
+                      <p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{b.business_name}</p>
+                      <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>${(b.baker_reserve_balance || 0).toFixed(2)}</p>
+                    </div>
+                  ))}
+                  {bakers.filter(b => (b.baker_reserve_balance || 0) > 0).length === 0 && (
+                    <p className="text-sm text-center py-4" style={{ color: '#5c3d2e' }}>No reserve balances yet.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
+        {activeTab === 'Broadcast' && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm max-w-2xl">
+            <h2 className="text-lg font-bold mb-1" style={{ color: '#2d1a0e' }}>Broadcast Email</h2>
+            <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>Send a message to all bakers, all customers, or everyone on the platform.</p>
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: '#5c3d2e' }}>Send to</label>
+                <div className="flex gap-2">
+                  {(['all', 'bakers', 'customers'] as const).map(t => (
+                    <button key={t} onClick={() => setBroadcastTarget(t)} className="px-4 py-2 rounded-lg text-sm font-semibold capitalize" style={{ backgroundColor: broadcastTarget === t ? '#2d1a0e' : '#f5f0eb', color: broadcastTarget === t ? 'white' : '#2d1a0e' }}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: '#5c3d2e' }}>Subject</label>
+                <input value={broadcastSubject} onChange={e => setBroadcastSubject(e.target.value)} placeholder="Email subject line" className="w-full px-3 py-2.5 rounded-xl border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: '#5c3d2e' }}>Message</label>
+                <textarea value={broadcastBody} onChange={e => setBroadcastBody(e.target.value)} rows={8} placeholder="Write your message here..." className="w-full px-3 py-2.5 rounded-xl border text-sm resize-none" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+              </div>
+              {broadcastSent && <p className="text-sm font-semibold" style={{ color: '#166534' }}>Broadcast sent successfully.</p>}
+              <button onClick={sendBroadcast} disabled={broadcastSending || !broadcastSubject.trim() || !broadcastBody.trim()} className="px-6 py-3 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#2d1a0e' }}>
+                {broadcastSending ? 'Sending...' : 'Send Broadcast'}
+              </button>
+              <p className="text-xs" style={{ color: '#9c7b6b' }}>
+                This will send to: {broadcastTarget === 'all' ? bakers.filter(b => b.is_active && !b.is_suspended).length + customers.filter(c => !c.is_suspended).length : broadcastTarget === 'bakers' ? bakers.filter(b => b.is_active && !b.is_suspended).length : customers.filter(c => !c.is_suspended).length} recipients
+              </p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'Reviews' && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>All Reviews ({reviews.length})</h2>
+            </div>
+            {reviews.length === 0 ? (
+              <p className="text-sm text-center py-8" style={{ color: '#5c3d2e' }}>No reviews yet.</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {reviews.map(r => (
+                  <div key={r.id} className="p-4 rounded-xl" style={{ backgroundColor: '#faf8f6' }}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{r.customer_name || 'Customer'}</span>
+                          <span className="text-xs" style={{ color: '#5c3d2e' }}>for</span>
+                          <span className="text-sm font-semibold" style={{ color: '#8B4513' }}>{r.bakers?.business_name}</span>
+                        </div>
+                        <div className="flex items-center gap-1 mb-2">
+                          {[1, 2, 3, 4, 5].map(n => (
+                            <span key={n} className="text-sm" style={{ color: n <= (r.rating || 0) ? '#f59e0b' : '#e0d5cc' }}>★</span>
+                          ))}
+                          <span className="text-xs ml-1" style={{ color: '#5c3d2e' }}>{r.rating}/5</span>
+                        </div>
+                        {r.comment && <p className="text-sm" style={{ color: '#2d1a0e' }}>{r.comment}</p>}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-xs" style={{ color: '#9c7b6b' }}>{new Date(r.created_at).toLocaleDateString()}</p>
+                        <button onClick={async () => { if (!confirm('Delete this review?')) return; await supabase.from('reviews').delete().eq('id', r.id); setReviews(reviews.filter(rv => rv.id !== r.id)) }} className="mt-2 px-2 py-1 rounded text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

@@ -1167,6 +1167,9 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                     {order.status === 'declined' && (
                       <Link href="/bakers" className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Find Another Baker</Link>
                     )}
+                    {order.status === 'complete' && (
+                      <Link href={'/bakers/' + order.baker_id + '?reorder=' + order.id} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#8B4513' }}>Reorder</Link>
+                    )}
                     {(order.status === 'pending' || order.status === 'confirmed') && !order.is_disputed && (
                       <button onClick={() => { setCancelOrder(order); setCancelReason(''); setCancelDescription('') }} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Cancel Order</button>
                     )}
@@ -1415,7 +1418,7 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
       </div>
 
       <footer className="text-center py-8 mt-10" style={{ backgroundColor: '#2d1a0e' }}>
-        <p className="text-sm" style={{ color: '#e0d5cc' }}>© 2026 Whiskly. All rights reserved.</p>
+        <p className="text-sm" style={{ color: '#e0d5cc' }}>© 2026 Whiskly. All rights reserved. · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a></p>
       </footer>
     </main>
   )

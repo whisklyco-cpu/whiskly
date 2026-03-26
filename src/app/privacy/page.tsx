@@ -13,7 +13,7 @@ Account Information: When you create an account, we collect your name, email add
 
 Order Information: When you place or fulfill an order, we collect details about the order including event type, event date, budget, item description, delivery address, and any inspiration photos you upload.
 
-Payment Information: Payments are processed through Stripe. Whiskly does not store your full payment card details. We receive limited transaction data from Stripe including the last four digits of your card and transaction amounts.
+Payment Information: Payments are processed through Stripe. Whiskly does not store your full payment card details. We receive limited transaction data from Stripe including the last four digits of your card and transaction amounts. For bakers, Whiskly stores your Stripe Connect account ID to facilitate payouts. Whiskly maintains a reserve balance record per baker (5% of each payout) in our system, separate from Stripe.
 
 Communications: We store messages sent between customers and bakers through the Platform in order to facilitate order management and dispute resolution.
 
@@ -69,7 +69,7 @@ We do not use third-party advertising cookies or share your data with advertisin
 - Portability: Request a machine-readable copy of your data
 - Objection: Object to certain uses of your information
 
-To exercise any of these rights, contact us at privacy@whiskly.com. We will respond to your request within 30 days.`
+To exercise any of these rights, contact us at support@whiskly.co. We will respond to your request within 30 days.`
   },
   {
     title: '7. Data Security',
@@ -87,7 +87,7 @@ No system is completely secure. We cannot guarantee the absolute security of you
   },
   {
     title: '10. Contact',
-    content: `For questions about this Privacy Policy or to exercise your data rights, contact us at privacy@whiskly.com.`
+    content: `For questions about this Privacy Policy or to exercise your data rights, contact us at support@whiskly.co.`
   },
 ]
 
@@ -125,7 +125,7 @@ export default function PrivacyPage() {
         <div className="mt-10 rounded-2xl p-6 text-center" style={{ backgroundColor: '#2d1a0e' }}>
           <p className="text-white font-semibold mb-2">Questions about your privacy?</p>
           <p className="text-sm mb-4" style={{ color: '#c4a882' }}>Reach out and we'll respond within 30 days.</p>
-          <a href="mailto:privacy@whiskly.com"
+          <a href="mailto:support@whiskly.co"
             className="inline-block px-6 py-3 rounded-xl font-semibold text-sm"
             style={{ backgroundColor: '#8B4513', color: 'white' }}>
             Contact Us
@@ -170,7 +170,7 @@ export default function PrivacyPage() {
           </div>
         </div>
         <p className="text-sm border-t pt-6" style={{ color: '#c4a882', borderColor: '#4a2e1a', maxWidth: '1280px', margin: '0 auto' }}>
-          © 2026 Whiskly. All rights reserved. · Currently in Beta
+          © 2026 Whiskly. All rights reserved. · Currently in Beta · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
         </p>
       </footer>
     </main>
