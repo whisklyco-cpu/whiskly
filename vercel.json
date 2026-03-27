@@ -11,5 +11,11 @@
     { "path": "/api/cron/review-requests", "schedule": "0 10 * * *" },
     { "path": "/api/cron/important-dates-reminder", "schedule": "0 9 * * *" },
     { "path": "/api/cron/baker-performance", "schedule": "0 8 * * 1" }
+    { "path": "/api/cron/content-reminder", "schedule": "0 8 * * *" }
+```
+
+**4 — Add one env var in Vercel:**
+```
+MARKETING_REMINDER_EMAIL=you@youremail.com
   ]
 }

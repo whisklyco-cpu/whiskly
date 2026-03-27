@@ -1,10 +1,11 @@
 'use client'
 
+import ContentCalendar from '@/components/marketing/ContentCalendar'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import AdsTab from '@/components/marketing/AdsTab'
 
-const TABS = ['Featured Bakers', 'Campaigns', 'Social Log', 'Seasonal', 'Content Hub', 'Paid Ads']
+const TABS = ['Featured Bakers', 'Content Calendar', 'Campaigns', 'Social Log', 'Seasonal', 'Content Hub', 'Paid Ads']
 
 const SOCIAL_PLATFORMS = ['Instagram', 'Threads', 'TikTok', 'Facebook', 'Lemon8']
 const CAMPAIGN_TYPES = ['Email blast', 'Featured rotation', 'Seasonal push', 'New baker spotlight', 'Holiday campaign', 'Other']
@@ -474,6 +475,10 @@ export default function MarketingPortal() {
             </div>
           </div>
         )}
+
+        {activeTab === 'Content Calendar' && !loading && (
+  <ContentCalendar adLogs={adLogs} />
+)}
 
         {/* Paid Ads */}
         {activeTab === 'Paid Ads' && !loading && (
