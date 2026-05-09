@@ -3,8 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
+import { getAttribution } from '@/lib/attribution'
+
+const PLATFORM_SPECIALTIES = ['Wedding Cakes','Birthday Cakes','Custom Cookies','Cupcakes','Kids Party Cakes','Vegan/Gluten Free','Alcohol Infused','Breads','Cheesecakes','Macarons','Custom Dessert Boxes']
 
 function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
   const full = Math.floor(rating)
@@ -29,9 +32,6 @@ function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
 export default function BakerProfile() {
   const { id } = useParams()
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const reorderId = searchParams.get('reorder')
-  const [reorderBanner, setReorderBanner] = useState(false)
   const [baker, setBaker] = useState<any>(null)
   const [portfolio, setPortfolio] = useState<any[]>([])
   const [reviews, setReviews] = useState<any[]>([])
@@ -52,13 +52,10 @@ export default function BakerProfile() {
   const [messageSent, setMessageSent] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [currentCustomer, setCurrentCustomer] = useState<any>(null)
-  const [isBlocked, setIsBlocked] = useState(false)
-  const [showAuthModal, setShowAuthModal] = useState(false)
 
   const [form, setForm] = useState({
     customer_name: '',
     email: '',
-    item_type: '',
     event_type: '',
     event_date: '',
     servings: '',
@@ -72,6 +69,18 @@ export default function BakerProfile() {
     delivery_zip: '',
     item_description: '',
   })
+
+  // Payment plan
+
+  // Multi-item
+  const [lineItems, setLineItems] = useState<{ item_type: string; description: string; servings: string }[]>([])
+
+  // High-value scope fields ($750+)
+  const [scopeServings, setScopeServings] = useState('')
+  const [scopeFlavorDetails, setScopeFlavorDetails] = useState('')
+  const [scopeDesign, setScopeDesign] = useState('')
+  const [scopeFulfillment, setScopeFulfillment] = useState('')
+  const [scopeConfirmed, setScopeConfirmed] = useState(false)
 
   const [addressSuggestions, setAddressSuggestions] = useState<any[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -92,7 +101,7 @@ export default function BakerProfile() {
     if (form.fulfillment_type === 'delivery') loadGoogleMaps()
   }, [form.fulfillment_type, loadGoogleMaps])
 
-  // Load current user for message feature + block check
+  // Load current user for message feature and reCAPTCHA
   useEffect(() => {
     async function loadUser() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -101,13 +110,16 @@ export default function BakerProfile() {
       const { data: customerData } = await supabase
         .from('customers').select('*').eq('user_id', session.user.id).maybeSingle()
       setCurrentCustomer(customerData)
-      if (customerData && id) {
-        const { data: blockData } = await supabase.from('blocks')
-          .select('id').eq('blocker_id', id).eq('blocked_id', customerData.user_id).eq('blocker_type', 'baker').maybeSingle()
-        if (blockData) setIsBlocked(true)
-      }
     }
     loadUser()
+    // Load reCAPTCHA v3 if key is configured
+    const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY
+    if (siteKey && !(window as any).grecaptcha) {
+      const script = document.createElement('script')
+      script.src = 'https://www.google.com/recaptcha/api.js?render=' + siteKey
+      script.async = true
+      document.head.appendChild(script)
+    }
   }, [])
 
   async function handleAddressInput(value: string) {
@@ -159,37 +171,6 @@ export default function BakerProfile() {
   }
 
   useEffect(() => { loadBaker() }, [id])
-
-  useEffect(() => {
-    if (!reorderId) return
-    async function prefillReorder() {
-      const { data: prevOrder } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('id', reorderId)
-        .maybeSingle()
-      if (!prevOrder) return
-      setForm(f => ({
-        ...f,
-        customer_name: prevOrder.customer_name || '',
-        email: prevOrder.customer_email || '',
-        item_type: prevOrder.item_type || '',
-        event_type: prevOrder.event_type || '',
-        servings: prevOrder.servings?.toString() || '',
-        budget: prevOrder.budget?.toString() || '',
-        flavor_preferences: prevOrder.flavor_preferences || '',
-        allergen_notes: prevOrder.allergen_notes || '',
-        fulfillment_type: prevOrder.fulfillment_type || '',
-        delivery_address: prevOrder.delivery_address || '',
-        delivery_city: prevOrder.delivery_city || '',
-        delivery_state: prevOrder.delivery_state || '',
-        delivery_zip: prevOrder.delivery_zip || '',
-        item_description: prevOrder.item_description || '',
-      }))
-      setReorderBanner(true)
-    }
-    prefillReorder()
-  }, [reorderId])
 
   async function loadBaker() {
     const { data: bakerData } = await supabase
@@ -261,8 +242,7 @@ export default function BakerProfile() {
       setTimeout(() => {
         setShowMessageModal(false)
         setMessageSent(false)
-        router.push('/dashboard/customer?tab=messages&baker=' + baker.id)
-      }, 1500)
+      }, 2000)
     } catch (err) {
       console.error('Message error:', err)
     }
@@ -270,14 +250,23 @@ export default function BakerProfile() {
   }
 
   async function handleSubmit() {
-    if (!currentUser) {
-      setShowAuthModal(true)
+    // Email verification gate
+    if (currentUser && !currentUser.email_confirmed_at) {
+      setFormError('Please verify your email address before placing an order. Check your inbox for a verification link.')
+      setAttempted(true)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    // Profile completion gate
+    if (currentCustomer && (!currentCustomer.full_name || !currentCustomer.email)) {
+      setFormError('Please complete your profile before placing an order. Visit your account settings.')
+      setAttempted(true)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
     const missingFields: string[] = []
     if (!form.customer_name) missingFields.push('Your Name')
     if (!form.email) missingFields.push('Email')
-    if (!form.item_type) missingFields.push('What are you ordering')
     if (!form.event_type) missingFields.push('Event Type')
     if (!form.event_date) missingFields.push('Event Date')
     if (!form.servings) missingFields.push('Servings')
@@ -296,19 +285,79 @@ export default function BakerProfile() {
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
+    // High-value scope validation
+    const budgetNum = parseFloat(form.budget) || 0
+    const isHighValue = budgetNum >= 750
+    if (isHighValue) {
+      if (!scopeFlavorDetails) missingFields.push('Flavor Details')
+      if (!scopeDesign || scopeDesign.trim().length < 50) missingFields.push('Design Description (min 50 characters)')
+      if (!scopeConfirmed) missingFields.push('Scope Confirmation Checkbox')
+    }
+
+    if (missingFields.length > 0) {
+      setAttempted(true)
+      setFormError('Please fill in: ' + missingFields.join(', '))
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     setFormError('')
     setAttempted(false)
+
+    // Rate limiting: max 3 order requests per 24 hours
+    const rateCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { count: recentCount } = await supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('customer_email', form.email)
+      .gte('created_at', rateCutoff)
+    if ((recentCount || 0) >= 3) {
+      setFormError("You've reached the maximum of 3 order requests in 24 hours. Please try again tomorrow.")
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    // reCAPTCHA v3 verification
+    const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY
+    if (recaptchaSiteKey && (window as any).grecaptcha) {
+      try {
+        const token: string = await new Promise((resolve, reject) => {
+          ;(window as any).grecaptcha.ready(() => {
+            ;(window as any).grecaptcha
+              .execute(recaptchaSiteKey, { action: 'order_submit' })
+              .then(resolve)
+              .catch(reject)
+          })
+        })
+        const captchaRes = await fetch('/api/verify-recaptcha', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        })
+        const captchaData = await captchaRes.json()
+        if (!captchaData.success) {
+          setFormError('We were unable to verify your request. Please try again or contact support.')
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+          return
+        }
+      } catch {
+        // reCAPTCHA unavailable — allow submission
+      }
+    }
+
     setSubmitting(true)
+
+    const isMultiItem = lineItems.length > 0
+
+    const attribution = getAttribution()
 
     const { data: newOrder } = await supabase.from('orders').insert({
       baker_id: baker.id,
       customer_name: form.customer_name,
       customer_email: form.email,
-      item_type: form.item_type,
       event_type: form.event_type,
       event_date: form.event_date,
       servings: form.servings,
-      budget: parseFloat(form.budget) || 0,
+      budget: budgetNum,
       flavor_preferences: form.flavor_preferences,
       allergen_notes: form.allergen_notes,
       fulfillment_type: form.fulfillment_type,
@@ -318,7 +367,28 @@ export default function BakerProfile() {
       item_description: form.item_description,
       status: 'pending',
       inspiration_photo_urls: [],
-      ...(reorderId ? { reorder_of: reorderId } : {}),
+      // Payment plan chosen post-acceptance by customer
+      payment_plan: null,
+      payment_plan_payment2_date: null,
+      // Multi-item
+      is_multi_item: isMultiItem,
+      line_items: isMultiItem ? lineItems.map(li => ({
+        item_type: li.item_type,
+        description: li.description,
+        servings: parseInt(li.servings) || 0,
+      })) : [],
+      // High-value scope
+      ...(isHighValue ? {
+        scope_serving_count: parseInt(form.servings) || null,
+        scope_flavor_details: scopeFlavorDetails.trim(),
+        scope_design_description: scopeDesign.trim(),
+        scope_fulfillment_method: form.fulfillment_type || null,
+        scope_confirmed_by_customer: scopeConfirmed,
+      } : {}),
+      referral_source: attribution.referral_source,
+      utm_source: attribution.utm_source || null,
+      utm_medium: attribution.utm_medium || null,
+      utm_campaign: attribution.utm_campaign || null,
     }).select().single()
 
     if (newOrder && inspirationFiles.length > 0) {
@@ -340,21 +410,6 @@ export default function BakerProfile() {
         eventDate: form.event_date,
         budget: form.budget,
         description: form.item_description,
-      })
-    }).catch(() => {})
-
-    fetch('/api/email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'order_received',
-        customerEmail: form.email,
-        customerName: form.customer_name,
-        bakerName: baker.business_name,
-        itemType: form.item_type,
-        eventType: form.event_type,
-        eventDate: form.event_date,
-        budget: form.budget,
       })
     }).catch(() => {})
 
@@ -413,21 +468,6 @@ export default function BakerProfile() {
     )}
   </div>
 )}
-
-      {/* Auth Modal */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="font-bold text-lg mb-2" style={{ color: '#2d1a0e' }}>You need an account to place an order</h3>
-            <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>Create a free account to send your order request, track your order, and message your baker.</p>
-            <div className="flex flex-col gap-2">
-              <Link href={'/signup?redirect=/bakers/' + id} className="w-full py-3 rounded-xl text-center text-sm font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Create Account</Link>
-              <Link href={'/login?redirect=/bakers/' + id} className="w-full py-3 rounded-xl text-center text-sm font-semibold border" style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }}>Sign In</Link>
-              <button onClick={() => setShowAuthModal(false)} className="text-xs mt-1" style={{ color: '#9c7b6b' }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Message Modal */}
       {showMessageModal && (
@@ -520,11 +560,14 @@ export default function BakerProfile() {
                     {baker.verified && (
                       <span className="px-2 py-0.5 text-xs font-semibold rounded-full" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>✓ Verified</span>
                     )}
+                    {baker.is_top_baker && (
+                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>⭐ Top Baker</span>
+                    )}
                     {baker.is_cottage_baker && (
-                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Cottage Baker</span>
+                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>🏠 Cottage Baker</span>
                     )}
                   </div>
-                  <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state}</p>
+                  <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>📍 {baker.city}, {baker.state}</p>
 
                   {avgRating && reviewCount > 0 ? (
                     <div className="flex items-center gap-2 mb-3">
@@ -609,18 +652,18 @@ export default function BakerProfile() {
             <div className="bg-white rounded-2xl p-8 shadow-sm">
               <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Service Details</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-                {baker.delivery_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>Delivery available</div>}
-                {baker.pickup_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>Pickup available</div>}
+                {baker.delivery_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>🚗</span> Delivery available</div>}
+                {baker.pickup_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>📦</span> Pickup available</div>}
                 {baker.rush_orders_available && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>⚡</span> Rush orders accepted</div>}
-                {baker.minimum_order > 0 && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>${baker.minimum_order} minimum</div>}
+                {baker.minimum_order > 0 && <div className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}><span>💵</span> ${baker.minimum_order} minimum</div>}
                 {baker.days_available?.length > 0 && (
                   <div className="flex items-center gap-2 text-sm col-span-2" style={{ color: '#5c3d2e' }}>
-                    Available: {baker.days_available.join(', ')}
+                    <span>📅</span> Available: {baker.days_available.join(', ')}
                   </div>
                 )}
                 {baker.cancellation_policy && (
                   <div className="flex items-center gap-2 text-sm col-span-2" style={{ color: '#5c3d2e' }}>
-                    {baker.cancellation_policy}
+                    <span>📋</span> {baker.cancellation_policy}
                   </div>
                 )}
               </div>
@@ -671,12 +714,7 @@ export default function BakerProfile() {
           {/* Right Column - Order Form */}
           <div>
             <div className="bg-white rounded-2xl p-6 shadow-sm md:sticky md:top-6">
-              {isBlocked ? (
-                <div className="text-center py-8">
-                  <p className="text-sm font-medium mb-1" style={{ color: '#2d1a0e' }}>This baker is not currently accepting new orders.</p>
-                  <p className="text-xs" style={{ color: '#5c3d2e' }}>You can browse other bakers on Whiskly.</p>
-                </div>
-              ) : submitted ? (
+              {submitted ? (
                 <div className="text-center py-8">
                   <p className="text-4xl mb-3">🎉</p>
                   <h3 className="font-bold text-lg mb-2" style={{ color: '#2d1a0e' }}>Order Sent!</h3>
@@ -688,12 +726,6 @@ export default function BakerProfile() {
                   <h3 className="font-bold text-lg mb-0.5" style={{ color: '#2d1a0e' }}>Start Your Order</h3>
                   <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>Describe your vision — no payment until your baker confirms</p>
                   <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>Fields marked <span style={{ color: '#dc2626' }}>*</span> are required</p>
-                  {reorderBanner && (
-                    <div className="mb-4 rounded-xl px-4 py-3 flex items-center gap-3" style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa' }}>
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l1.7 3.5 3.8.6-2.8 2.7.7 3.9L8 10.5l-3.4 1.7.7-3.9L2.5 5.6l3.8-.6z" fill="#c2410c" /></svg>
-                      <p className="text-xs font-semibold" style={{ color: '#c2410c' }}>Pre-filled from your previous order — update any details and hit Send!</p>
-                    </div>
-                  )}
 
                   {formError && (
                     <div className="mb-3 px-4 py-3 rounded-xl text-xs font-medium" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>
@@ -717,29 +749,10 @@ export default function BakerProfile() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>What are you ordering? <span style={{ color: '#dc2626' }}>*</span></label>
-                      <select value={form.item_type} onChange={e => setForm({ ...form, item_type: e.target.value })}
-                        className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: !form.item_type && attempted ? '#dc2626' : '#e0d5cc', color: form.item_type ? '#2d1a0e' : '#9c7b6b', backgroundColor: '#faf8f6' }}>
-                        <option value="">Select item type</option>
-                        <option>Custom Cake</option>
-                        <option>Cupcakes</option>
-                        <option>Cookies</option>
-                        <option>Cake Pops</option>
-                        <option>Brownies</option>
-                        <option>Macarons</option>
-                        <option>Cheesecake</option>
-                        <option>Pie</option>
-                        <option>Assorted Desserts</option>
-                        <option>Other</option>
-                      </select>
-                    </div>
-
-                    <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Event Type <span style={{ color: '#dc2626' }}>*</span></label>
                       <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value })}
                         className="w-full px-3 py-2.5 rounded-lg border text-sm"
-                        style={{ borderColor: !form.event_type && attempted ? '#dc2626' : '#e0d5cc', color: form.event_type ? '#2d1a0e' : '#9c7b6b', backgroundColor: '#faf8f6' }}>
+                        style={{ borderColor: !form.event_type && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>
                         <option value="">Select event</option>
                         <option>Birthday</option>
                         <option>Wedding</option>
@@ -748,9 +761,6 @@ export default function BakerProfile() {
                         <option>Anniversary</option>
                         <option>Corporate Event</option>
                         <option>Holiday</option>
-                        <option>Just a treat for myself</option>
-                        <option>Craving something sweet</option>
-                        <option>Gift for someone</option>
                         <option>Other</option>
                       </select>
                     </div>
@@ -822,23 +832,50 @@ export default function BakerProfile() {
                           )}
                         </div>
                         {(form.delivery_city || form.delivery_state || form.delivery_zip) ? (
-                          <div className="flex gap-2 items-center px-3 py-2 rounded-lg" style={{ backgroundColor: '#dcfce7', border: '1px solid #bbf7d0' }}>
-                            <span className="text-xs" style={{ color: '#166534' }}>✓</span>
-                            <span className="text-sm font-medium flex-1" style={{ color: '#166534' }}>
-                              {form.delivery_city}{form.delivery_state ? ', ' + form.delivery_state : ''}{form.delivery_zip ? ' ' + form.delivery_zip : ''}
-                            </span>
-                            <button type="button" onClick={() => setForm(f => ({ ...f, delivery_address: '', delivery_city: '', delivery_state: '', delivery_zip: '' }))}
-                              className="text-xs underline" style={{ color: '#166534' }}>Change</button>
-                          </div>
-                        ) : (attempted && (!form.delivery_city || !form.delivery_zip)) ? (
-                          <p className="text-xs" style={{ color: '#dc2626' }}>Select an address from the dropdown to autofill city, state & zip</p>
-                        ) : null}
+  <div className="flex gap-2 items-center px-3 py-2 rounded-lg" style={{ backgroundColor: '#dcfce7', border: '1px solid #bbf7d0' }}>
+    <span className="text-xs" style={{ color: '#166534' }}>✓</span>
+    <span className="text-sm font-medium flex-1" style={{ color: '#166534' }}>
+      {form.delivery_city}{form.delivery_state ? ', ' + form.delivery_state : ''}{form.delivery_zip ? ' ' + form.delivery_zip : ''}
+    </span>
+    <button type="button" onClick={() => setForm(f => ({ ...f, delivery_address: '', delivery_city: '', delivery_state: '', delivery_zip: '' }))}
+      className="text-xs underline" style={{ color: '#166534' }}>Change</button>
+  </div>
+) : (
+  <div className="flex flex-col gap-2">
+    <p className="text-xs" style={{ color: '#5c3d2e' }}>
+      Or enter manually:
+    </p>
+    <div className="flex gap-2">
+      <input
+        value={form.delivery_city}
+        onChange={e => setForm(f => ({ ...f, delivery_city: e.target.value }))}
+        placeholder="City"
+        className="flex-1 px-3 py-2 rounded-lg border text-sm"
+        style={{ borderColor: !form.delivery_city && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+      <input
+        value={form.delivery_state}
+        onChange={e => setForm(f => ({ ...f, delivery_state: e.target.value }))}
+        placeholder="State"
+        className="w-16 px-3 py-2 rounded-lg border text-sm"
+        style={{ borderColor: !form.delivery_state && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+      <input
+        value={form.delivery_zip}
+        onChange={e => setForm(f => ({ ...f, delivery_zip: e.target.value }))}
+        placeholder="Zip"
+        className="w-20 px-3 py-2 rounded-lg border text-sm"
+        style={{ borderColor: !form.delivery_zip && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+    </div>
+    {attempted && (!form.delivery_city || !form.delivery_state || !form.delivery_zip) && (
+      <p className="text-xs" style={{ color: '#dc2626' }}>Please fill in city, state, and zip — or select from the autocomplete above</p>
+    )}
+  </div>
+)}
                       </div>
                     )}
 
                     {form.fulfillment_type === 'pickup' && (
                       <div className="px-3 py-2.5 rounded-xl text-xs" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>
-                        Pickup location ({baker.city}, {baker.state}) will be shared once your baker accepts your order.
+                        📦 Pickup location ({baker.city}, {baker.state}) will be shared once your baker accepts your order.
                       </div>
                     )}
 
@@ -865,6 +902,71 @@ export default function BakerProfile() {
                         className="w-full px-3 py-2.5 rounded-lg border text-sm resize-none"
                         style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
                     </div>
+
+                    {/* Multi-item line items */}
+                    {lineItems.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        {lineItems.map((li, i) => (
+                          <div key={i} className="flex flex-col gap-1.5 p-3 rounded-xl border" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>Item {i + 2}</p>
+                              <button type="button" onClick={() => setLineItems(prev => prev.filter((_, j) => j !== i))} className="text-xs" style={{ color: '#dc2626' }}>Remove</button>
+                            </div>
+                            <select value={li.item_type} onChange={e => setLineItems(prev => prev.map((x, j) => j === i ? { ...x, item_type: e.target.value } : x))}
+                              className="w-full px-3 py-2 rounded-lg border text-xs" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }}>
+                              <option value="">Item type...</option>
+                              {(Array.isArray(baker?.specialties) && baker.specialties.length > 0 ? baker.specialties : PLATFORM_SPECIALTIES).map((t: string) => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                              <option value="Other">Other</option>
+                            </select>
+                            <input value={li.description} onChange={e => setLineItems(prev => prev.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
+                              placeholder="Description..." className="w-full px-3 py-2 rounded-lg border text-xs"
+                              style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+                            <input type="number" value={li.servings} onChange={e => setLineItems(prev => prev.map((x, j) => j === i ? { ...x, servings: e.target.value } : x))}
+                              placeholder="Quantity / servings" className="w-full px-3 py-2 rounded-lg border text-xs"
+                              style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {lineItems.length < 6 && (
+                      <button type="button" onClick={() => setLineItems(prev => [...prev, { item_type: '', description: '', servings: '' }])}
+                        className="w-full py-2 rounded-lg border text-xs font-semibold"
+                        style={{ borderColor: '#e0d5cc', color: '#5c3d2e', backgroundColor: '#faf8f6' }}>
+                        + Add another item {lineItems.length > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs font-bold" style={{ backgroundColor: '#2d1a0e', color: 'white' }}>Multi-item order</span>}
+                      </button>
+                    )}
+
+                    {/* High-value scope fields ($750+) */}
+                    {(parseFloat(form.budget) || 0) >= 750 && (
+                      <div className="flex flex-col gap-3 p-4 rounded-xl border-2" style={{ borderColor: '#8B4513', backgroundColor: '#fff7ed' }}>
+                        <p className="text-xs font-bold" style={{ color: '#8B4513' }}>High-value order — additional details required</p>
+                        <p className="text-xs" style={{ color: '#5c3d2e' }}>Orders over $750 require a structured scope so your baker can commit with confidence.</p>
+                        <div>
+                          <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Flavor details <span style={{ color: '#dc2626' }}>*</span></label>
+                          <input value={scopeFlavorDetails} onChange={e => setScopeFlavorDetails(e.target.value)}
+                            placeholder="e.g. Vanilla bean cake, raspberry filling, white chocolate ganache..."
+                            className="w-full px-3 py-2 rounded-lg border text-xs"
+                            style={{ borderColor: !scopeFlavorDetails && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Design description <span style={{ color: '#dc2626' }}>*</span> <span className="font-normal" style={{ color: '#5c3d2e' }}>(min 50 characters)</span></label>
+                          <textarea value={scopeDesign} onChange={e => setScopeDesign(e.target.value)} rows={3}
+                            placeholder="Describe the design in detail — tiers, colors, textures, decorations, toppers, any reference photos..."
+                            className="w-full px-3 py-2 rounded-lg border text-xs resize-none"
+                            style={{ borderColor: (!scopeDesign || scopeDesign.length < 50) && attempted ? '#dc2626' : '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+                          <p className="text-xs mt-0.5" style={{ color: scopeDesign.length < 50 ? '#8B4513' : '#166534' }}>{scopeDesign.length} / 50 characters minimum</p>
+                        </div>
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input type="checkbox" checked={scopeConfirmed} onChange={e => setScopeConfirmed(e.target.checked)}
+                            className="mt-0.5 flex-shrink-0" />
+                          <span className="text-xs" style={{ color: !scopeConfirmed && attempted ? '#dc2626' : '#2d1a0e' }}>
+                            I confirm these details are accurate. I understand changes after acceptance may not be possible.
+                          </span>
+                        </label>
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>
@@ -906,6 +1008,7 @@ export default function BakerProfile() {
 
                     
                     <p className="text-xs text-center" style={{ color: '#5c3d2e' }}>No payment until your baker confirms</p>
+                    <p className="text-xs text-center leading-relaxed mt-1" style={{ color: '#9c7b6b' }}>By submitting this request, you agree that if your baker accepts, you will pay the baker's listed price plus a $4.99 Whiskly platform fee plus standard payment processing fees. The exact total will be shown at checkout for your final approval before any charge is made.</p>
                   </div>
                 </>
               )}
@@ -915,7 +1018,7 @@ export default function BakerProfile() {
       </div>
 
       <footer className="text-center py-8 mt-10" style={{ backgroundColor: '#2d1a0e' }}>
-        <p className="text-sm" style={{ color: '#e0d5cc' }}>© 2026 Whiskly. All rights reserved. · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a></p>
+        <p className="text-sm" style={{ color: '#e0d5cc' }}>© 2026 Whiskly. All rights reserved.</p>
       </footer>
     </main>
   )

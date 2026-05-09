@@ -6,9 +6,10 @@ import Link from 'next/link'
 import WhisklyLogo from '@/components/WhisklyLogo'
 import { EmergencyCase } from './components/EmergencyCase'
 import { DisputeCase } from './components/DisputeCase'
+import { DisputesTab } from './components/DisputesTab'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
-const TABS = ['Overview', 'Orders', 'Bakers', 'Customers', 'Disputes', 'Applications', 'Emergency', 'Accounting', 'Earnings', 'Broadcast', 'Reviews']
+const TABS = ['Overview', 'Orders', 'Bakers', 'Customers', 'Disputes', 'Applications', 'Emergency', 'Accounting', 'Earnings', 'Broadcast', 'Reviews', 'Messages']
 
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState('Overview')
@@ -20,8 +21,13 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(false)
 
   const [reviews, setReviews] = useState<any[]>([])
+  const [activeDisputes, setActiveDisputes] = useState<any[]>([])
+  const [resolvedDisputes, setResolvedDisputes] = useState<any[]>([])
+  const [disputeFocusId, setDisputeFocusId] = useState<string | null>(null)
+  const [flaggedMessages, setFlaggedMessages] = useState<any[]>([])
 
   useEffect(() => { loadAll() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const [orderSearch, setOrderSearch] = useState('')
   const [bakerSearch, setBakerSearch] = useState('')
@@ -35,25 +41,59 @@ export default function AdminPanel() {
   const [broadcastSending, setBroadcastSending] = useState(false)
   const [broadcastSent, setBroadcastSent] = useState(false)
 
+  const [applications, setApplications] = useState<any[]>([])
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [approvingId, setApprovingId] = useState<string | null>(null)
+
+  const [showClearModal, setShowClearModal] = useState(false)
+  const [clearConfirmText, setClearConfirmText] = useState('')
+  const [clearingData, setClearingData] = useState(false)
+  const [clearResult, setClearResult] = useState<string | null>(null)
+
   async function handleLogout() {
     await fetch('/api/admin/logout', { method: 'POST' })
     window.location.href = '/admin/login'
   }
 
+  async function clearTestData() {
+    if (clearConfirmText !== 'DELETE') return
+    setClearingData(true)
+    const res = await fetch('/api/admin/clear-test-data', { method: 'POST' })
+    const data = await res.json()
+    setClearingData(false)
+    if (data.error) {
+      setClearResult('Error: ' + data.error)
+    } else {
+      setClearResult(data.message)
+      setClearConfirmText('')
+      setShowClearModal(false)
+      await loadAll()
+    }
+  }
+
   async function loadAll() {
     setLoading(true)
-    const [ordersRes, bakersRes, customersRes, emergencyRes, reviewsRes] = await Promise.all([
-      supabase.from('orders').select('*, bakers(id, business_name, city, state, is_pro, stripe_account_id)').order('created_at', { ascending: false }),
+    const [ordersRes, bakersRes, customersRes, emergencyRes, reviewsRes, activeDisputesRes, resolvedDisputesRes, flaggedMsgsRes, applicationsRes] = await Promise.all([
+      supabase.from('orders').select('*, bakers(id, business_name, city, state, tier, stripe_account_id)').order('created_at', { ascending: false }),
       supabase.from('bakers').select('*').order('created_at', { ascending: false }),
       supabase.from('customers').select('*').order('created_at', { ascending: false }),
       supabase.from('emergency_cases').select('*, bakers(business_name, email, city, state)').eq('status', 'open').order('created_at', { ascending: false }),
       supabase.from('reviews').select('*, bakers(business_name)').order('created_at', { ascending: false }),
+      supabase.from('orders').select('*, bakers(id, business_name, email, tier)').eq('is_disputed', true).eq('auto_resolved', false).order('dispute_filed_at', { ascending: false }),
+      supabase.from('orders').select('*, bakers(id, business_name, email, tier)').not('resolved_at', 'is', null).order('resolved_at', { ascending: false }).limit(100),
+      supabase.from('messages').select('*').eq('is_flagged', true).order('created_at', { ascending: false }).limit(200),
+      supabase.from('bakers').select('*').eq('application_status', 'pending').order('created_at', { ascending: true }),
     ])
     setOrders(ordersRes.data || [])
     setBakers(bakersRes.data || [])
     setCustomers(customersRes.data || [])
     setEmergencyCases(emergencyRes.data || [])
     setReviews(reviewsRes.data || [])
+    setActiveDisputes(activeDisputesRes.data || [])
+    setResolvedDisputes(resolvedDisputesRes.data || [])
+    setFlaggedMessages(flaggedMsgsRes.data || [])
+    setApplications(applicationsRes.data || [])
     setLoading(false)
   }
 
@@ -64,9 +104,9 @@ export default function AdminPanel() {
   }
 
   async function toggleBakerPro(baker: any) {
-    const newVal = !baker.is_pro
-    await supabase.from('bakers').update({ is_pro: newVal }).eq('id', baker.id)
-    setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_pro: newVal } : b))
+    const newTier = baker.tier === 'pro' ? 'free' : 'pro'
+    await supabase.from('bakers').update({ tier: newTier }).eq('id', baker.id)
+    setBakers(bakers.map(b => b.id === baker.id ? { ...b, tier: newTier } : b))
   }
 
   async function toggleFoundingBaker(baker: any) {
@@ -81,6 +121,15 @@ export default function AdminPanel() {
     setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_featured: newVal } : b))
   }
 
+  async function toggleTopBaker(baker: any) {
+    const newVal = !baker.is_top_baker
+    const update: any = { is_top_baker: newVal }
+    if (newVal) update.top_baker_since = new Date().toISOString()
+    else update.top_baker_since = null
+    await supabase.from('bakers').update(update).eq('id', baker.id)
+    setBakers(bakers.map(b => b.id === baker.id ? { ...b, ...update } : b))
+  }
+
   async function approveBaker(baker: any) {
     await supabase.from('bakers').update({ is_active: true, profile_complete: true }).eq('id', baker.id)
     setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_active: true, profile_complete: true } : b))
@@ -91,6 +140,44 @@ export default function AdminPanel() {
     setBakers(bakers.map(b => b.id === baker.id ? { ...b, is_suspended: true } : b))
   }
 
+  async function approveBakerApplication(baker: any) {
+    setApprovingId(baker.id)
+    await supabase.from('bakers').update({ is_active: true, is_listed: true, needs_review: false, application_status: 'approved' }).eq('id', baker.id)
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'announcement',
+        to: baker.email,
+        name: baker.owner_name || baker.business_name,
+        subject: 'You have been approved on Whiskly',
+        body: `Hi ${baker.owner_name || baker.business_name}, your application has been approved. You can now log in and complete your onboarding at whiskly.com/dashboard/baker. We are excited to have you. Welcome to the community. — Alex, Founder of Whiskly`,
+      }),
+    }).catch(() => {})
+    setApplications(prev => prev.filter(a => a.id !== baker.id))
+    setBakers(prev => prev.map(b => b.id === baker.id ? { ...b, is_active: true, is_listed: true } : b))
+    setApprovingId(null)
+  }
+
+  async function rejectBakerApplication(baker: any, reason: string) {
+    await supabase.from('bakers').update({ application_status: 'rejected' }).eq('id', baker.id)
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'announcement',
+        to: baker.email,
+        name: baker.owner_name || baker.business_name,
+        subject: 'Your Whiskly application',
+        body: `Hi ${baker.owner_name || baker.business_name}, thank you for applying to Whiskly. After reviewing your application we are not able to move forward at this time. ${reason} You are welcome to reapply in the future.`,
+      }),
+    }).catch(() => {})
+    setApplications(prev => prev.filter(a => a.id !== baker.id))
+    setBakers(prev => prev.map(b => b.id === baker.id ? { ...b, application_status: 'rejected' } : b))
+    setRejectingId(null)
+    setRejectReason('')
+  }
+
   async function toggleCustomerSuspend(customer: any) {
     const newVal = !customer.is_suspended
     await supabase.from('customers').update({ is_suspended: newVal }).eq('id', customer.id)
@@ -99,8 +186,47 @@ export default function AdminPanel() {
 
   async function flagOrder(order: any) {
     const newVal = !order.is_flagged
-    await supabase.from('orders').update({ is_flagged: newVal }).eq('id', order.id)
-    setOrders(orders.map(o => o.id === order.id ? { ...o, is_flagged: newVal } : o))
+    const now = new Date().toISOString()
+
+    if (newVal) {
+      // Flagging: write dispute fields only if no dispute already exists
+      const updates: any = { is_flagged: true }
+      if (!order.is_disputed) {
+        updates.is_disputed = true
+        updates.dispute_reason = 'flagged_by_admin'
+        updates.dispute_filed_by = 'admin'
+        updates.dispute_filed_at = now
+      }
+      await supabase.from('orders').update(updates).eq('id', order.id)
+      const updatedOrder = { ...order, ...updates }
+      setOrders(orders.map(o => o.id === order.id ? updatedOrder : o))
+      // Add to activeDisputes state if we just created the dispute record
+      if (!order.is_disputed) {
+        setActiveDisputes(prev => [updatedOrder, ...prev])
+        // Initialize evidence collection for newly created dispute
+        fetch('/api/disputes/evidence/init', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_id: order.id }),
+        }).catch(() => {})
+      }
+    } else {
+      // Unflagging: only close the dispute if admin was the one who filed it
+      const updates: any = { is_flagged: false }
+      if (order.dispute_filed_by === 'admin') {
+        updates.is_disputed = false
+        updates.dispute_reason = null
+        updates.dispute_filed_by = null
+        updates.dispute_filed_at = null
+      }
+      await supabase.from('orders').update(updates).eq('id', order.id)
+      const updatedOrder = { ...order, ...updates }
+      setOrders(orders.map(o => o.id === order.id ? updatedOrder : o))
+      // Remove from activeDisputes only if we closed the dispute
+      if (order.dispute_filed_by === 'admin') {
+        setActiveDisputes(prev => prev.filter(d => d.id !== order.id))
+      }
+    }
   }
 
   async function resolveDispute(order: any) {
@@ -178,7 +304,7 @@ export default function AdminPanel() {
       ['Date', 'Order ID', 'Customer', 'Baker', 'Event Type', 'Total ($)', 'Commission ($)', 'Deposit Paid', 'Remainder Paid', 'Status'],
       ...filtered.map(o => {
         const total = o.amount_total ? (o.amount_total / 100).toFixed(2) : o.budget || 0
-        const commission = o.amount_total ? ((o.amount_total / 100) * (o.bakers?.is_pro ? 0.07 : 0.10)).toFixed(2) : ''
+        const commission = o.amount_total ? ((o.amount_total / 100) * (o.bakers?.tier === 'pro' ? 0.07 : 0.10)).toFixed(2) : ''
         return [new Date(o.created_at).toLocaleDateString(), o.id.slice(0, 8), o.customer_name, o.bakers?.business_name || '', o.event_type, total, commission, o.deposit_paid_at ? 'Yes' : 'No', o.remainder_paid_at ? 'Yes' : 'No', o.status]
       })
     ]
@@ -193,13 +319,13 @@ export default function AdminPanel() {
 
   const totalGMV = orders.filter(o => o.deposit_paid_at).reduce((sum, o) => sum + (o.amount_total || (o.budget * 100) || 0), 0) / 100
   const totalCommission = orders.filter(o => o.deposit_paid_at).reduce((sum, o) => {
-    const rate = o.bakers?.is_pro ? 0.07 : 0.10
+    const rate = o.bakers?.tier === 'pro' ? 0.07 : 0.10
     return sum + ((o.amount_total || (o.budget * 100) || 0) / 100) * rate
   }, 0)
   const pendingOrders = orders.filter(o => o.status === 'pending').length
   const disputedOrders = orders.filter(o => o.is_disputed || o.is_flagged)
-  const pendingApplications = bakers.filter(b => !b.is_active || !b.profile_complete)
-  const proCount = bakers.filter(b => b.is_pro).length
+  const pendingApplications = bakers.filter(b => !b.is_active)
+  const proCount = bakers.filter(b => b.tier === 'pro').length
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
@@ -214,14 +340,14 @@ export default function AdminPanel() {
               {emergencyCases.length} emergency — click now
             </button>
           )}
-          {disputedOrders.length > 0 && (
+          {activeDisputes.length > 0 && (
             <button onClick={() => setActiveTab('Disputes')} className="text-xs px-3 py-1.5 rounded-full font-semibold cursor-pointer" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>
-              {disputedOrders.length} dispute{disputedOrders.length > 1 ? 's' : ''} — click to review
+              {activeDisputes.length} dispute{activeDisputes.length > 1 ? 's' : ''} — click to review
             </button>
           )}
-          {pendingApplications.length > 0 && (
+          {applications.length > 0 && (
             <button onClick={() => setActiveTab('Applications')} className="text-xs px-3 py-1.5 rounded-full font-semibold cursor-pointer" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>
-              {pendingApplications.length} application{pendingApplications.length > 1 ? 's' : ''} — click to review
+              {applications.length} application{applications.length > 1 ? 's' : ''} — click to review
             </button>
           )}
           <button onClick={handleLogout} className="px-3 py-1.5 rounded-lg border text-xs font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Sign Out</button>
@@ -233,9 +359,10 @@ export default function AdminPanel() {
           {TABS.map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} className="px-4 py-2 rounded-lg text-sm font-semibold relative" style={{ backgroundColor: activeTab === tab ? '#2d1a0e' : 'white', color: activeTab === tab ? 'white' : '#2d1a0e' }}>
               {tab}
-              {tab === 'Disputes' && disputedOrders.length > 0 && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#dc2626', color: 'white' }}>{disputedOrders.length}</span>}
-              {tab === 'Applications' && pendingApplications.length > 0 && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#f59e0b', color: 'white' }}>{pendingApplications.length}</span>}
+              {tab === 'Disputes' && activeDisputes.length > 0 && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#dc2626', color: 'white' }}>{activeDisputes.length}</span>}
+              {tab === 'Applications' && applications.length > 0 && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#f59e0b', color: 'white' }}>{applications.length}</span>}
               {tab === 'Emergency' && emergencyCases.length > 0 && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#dc2626', color: 'white' }}>{emergencyCases.length}</span>}
+              {tab === 'Messages' && flaggedMessages.length > 0 && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: '#f59e0b', color: 'white' }}>{flaggedMessages.length}</span>}
             </button>
           ))}
         </div>
@@ -291,16 +418,13 @@ export default function AdminPanel() {
                       </div>
                     </div>
                   ))}
-                  {disputedOrders.map(order => (
+                  {activeDisputes.map(order => (
                     <div key={order.id} className="flex items-center justify-between p-4 rounded-xl border-l-4 gap-4" style={{ backgroundColor: '#fef2f2', borderColor: '#dc2626' }}>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>Dispute — {order.customer_name} vs {order.bakers?.business_name}</p>
-                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{order.event_type} · {order.event_date} · ${order.budget} · Order {order.id.slice(0, 8)}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{order.event_type} · {order.event_date} · Order {order.id.slice(0, 8)}</p>
                       </div>
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button onClick={() => resolveDispute(order)} className="px-4 py-2 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: '#166534' }}>Resolve</button>
-                        {order.deposit_paid_at && <button onClick={() => issueRefund(order)} className="px-4 py-2 rounded-lg text-xs font-bold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Refund</button>}
-                      </div>
+                      <button onClick={() => { setDisputeFocusId(order.id); setActiveTab('Disputes') }} className="px-4 py-2 rounded-lg text-xs font-bold text-white flex-shrink-0" style={{ backgroundColor: '#2d1a0e' }}>Resolve</button>
                     </div>
                   ))}
                 </div>
@@ -346,6 +470,54 @@ export default function AdminPanel() {
                     <p className="text-xs mt-1" style={{ color: '#9c7b6b' }}>click to view →</p>
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Clear Test Data */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Developer Tools</h2>
+                  <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Remove test data from orders, messages, and reviews.</p>
+                </div>
+                <button onClick={() => { setShowClearModal(true); setClearConfirmText(''); setClearResult(null) }}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold border"
+                  style={{ borderColor: '#dc2626', color: '#dc2626' }}>
+                  Clear Test Data
+                </button>
+              </div>
+              {clearResult && <p className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ backgroundColor: '#f0fdf4', color: '#166534' }}>{clearResult}</p>}
+            </div>
+          </div>
+        )}
+
+        {/* Clear Test Data modal */}
+        {showClearModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+              <h3 className="font-bold text-lg mb-2" style={{ color: '#991b1b' }}>Clear Test Data</h3>
+              <div className="rounded-xl px-4 py-3 mb-4" style={{ backgroundColor: '#fee2e2', border: '1px solid #fecaca' }}>
+                <p className="text-xs font-semibold mb-1" style={{ color: '#991b1b' }}>This will permanently delete:</p>
+                <p className="text-xs" style={{ color: '#7f1d1d' }}>All orders, messages, reviews, and disputes. Baker and customer accounts will be kept. This cannot be undone.</p>
+              </div>
+              <p className="text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Type <span style={{ color: '#dc2626' }}>DELETE</span> to confirm:</p>
+              <input
+                type="text"
+                value={clearConfirmText}
+                onChange={e => setClearConfirmText(e.target.value)}
+                placeholder="DELETE"
+                className="w-full px-3 py-2.5 rounded-lg border text-sm mb-4"
+                style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
+              />
+              <div className="flex gap-3">
+                <button onClick={() => { setShowClearModal(false); setClearConfirmText('') }}
+                  className="flex-1 py-3 rounded-xl border text-sm font-semibold"
+                  style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+                <button onClick={clearTestData} disabled={clearConfirmText !== 'DELETE' || clearingData}
+                  className="flex-1 py-3 rounded-xl text-white text-sm font-semibold"
+                  style={{ backgroundColor: '#dc2626', opacity: (clearConfirmText !== 'DELETE' || clearingData) ? 0.5 : 1 }}>
+                  {clearingData ? 'Deleting...' : 'Delete All Test Data'}
+                </button>
               </div>
             </div>
           </div>
@@ -423,7 +595,7 @@ export default function AdminPanel() {
                         <td className="py-2.5 px-3" style={{ color: '#5c3d2e' }}>{new Date(baker.created_at).toLocaleDateString()}</td>
                         <td className="py-2.5 px-3" style={{ color: '#2d1a0e' }}>{bakerOrders.length}</td>
                         <td className="py-2.5 px-3">
-                          <button onClick={() => toggleBakerPro(baker)} className="px-2 py-1 rounded text-xs font-semibold" style={{ backgroundColor: baker.is_pro ? '#2d1a0e' : '#f5f0eb', color: baker.is_pro ? 'white' : '#2d1a0e' }}>{baker.is_pro ? 'Pro' : 'Free'}</button>
+                          <button onClick={() => toggleBakerPro(baker)} className="px-2 py-1 rounded text-xs font-semibold" style={{ backgroundColor: baker.tier === 'pro' ? '#2d1a0e' : '#f5f0eb', color: baker.tier === 'pro' ? 'white' : '#2d1a0e' }}>{baker.tier === 'pro' ? 'Pro' : 'Free'}</button>
                         </td>
                         <td className="py-2.5 px-3">
                           <button onClick={() => toggleFeatured(baker)} className="px-2 py-1 rounded text-xs font-semibold" style={{ backgroundColor: baker.is_featured ? '#f59e0b' : '#f5f0eb', color: baker.is_featured ? 'white' : '#2d1a0e' }}>{baker.is_featured ? '★ Yes' : 'No'}</button>
@@ -443,7 +615,8 @@ export default function AdminPanel() {
                           <div className="flex gap-1.5 flex-wrap">
                             <button onClick={() => toggleBakerSuspend(baker)} className="px-2 py-1 rounded text-xs font-semibold border" style={{ borderColor: baker.is_suspended ? '#166534' : '#dc2626', color: baker.is_suspended ? '#166534' : '#dc2626' }}>{baker.is_suspended ? 'Unsuspend' : 'Suspend'}</button>
                             <button onClick={() => handleStrike(baker)} className="px-2 py-1 rounded text-xs font-semibold border" style={{ borderColor: (baker.strike_count || 0) >= 2 ? '#dc2626' : '#e0d5cc', color: (baker.strike_count || 0) >= 2 ? '#dc2626' : '#5c3d2e', backgroundColor: (baker.strike_count || 0) > 0 ? '#fef2f2' : 'transparent' }}>Strike</button>
-                            <button onClick={() => toggleFoundingBaker(baker)} className="px-2 py-1 rounded text-xs font-semibold border" style={{ borderColor: '#8B4513', color: '#8B4513', backgroundColor: baker.is_founding_baker ? '#fff7ed' : 'transparent' }}>{baker.is_founding_baker ? '✓ Found' : 'Found'}</button>
+                            <button onClick={() => toggleFoundingBaker(baker)} className="px-2 py-1 rounded text-xs font-semibold border" style={{ borderColor: '#8B4513', color: '#8B4513', backgroundColor: baker.is_founding_baker ? '#fff7ed' : 'transparent' }}>{baker.is_founding_baker ? '✓ Founding' : 'Founding'}</button>
+                            <button onClick={() => toggleTopBaker(baker)} className="px-2 py-1 rounded text-xs font-semibold border" style={{ borderColor: '#92400e', color: '#92400e', backgroundColor: baker.is_top_baker ? '#fef3c7' : 'transparent' }}>{baker.is_top_baker ? '⭐ Top' : 'Top'}</button>
                             <Link href={'/bakers/' + baker.id} target="_blank" className="px-2 py-1 rounded text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>View</Link>
                           </div>
                         </td>
@@ -488,42 +661,129 @@ export default function AdminPanel() {
         )}
 
         {activeTab === 'Disputes' && (
-          <div className="flex flex-col gap-4">
-            {disputedOrders.length === 0 ? (
-              <div className="bg-white rounded-2xl p-12 shadow-sm text-center"><p className="text-2xl mb-2">✓</p><p className="font-semibold" style={{ color: '#2d1a0e' }}>No active disputes</p><p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>All orders are in good standing.</p></div>
-            ) : disputedOrders.map(order => (
-              <DisputeCase key={order.id} order={order} bakers={bakers} onResolve={async (orderId: string, outcome: string, strikeBaker: boolean) => {
-                await supabase.from('orders').update({ is_disputed: false, is_flagged: false, status: outcome === 'refund' ? 'refunded' : 'complete' }).eq('id', orderId)
-                setOrders(orders.map(o => o.id === orderId ? { ...o, is_disputed: false, is_flagged: false, status: outcome === 'refund' ? 'refunded' : 'complete' } : o))
-                if (strikeBaker) { const b = bakers.find(b => b.id === order.baker_id); if (b) handleStrike(b) }
-              }} onRefund={() => issueRefund(order)} />
-            ))}
-          </div>
+          <DisputesTab
+            activeDisputes={activeDisputes}
+            resolvedDisputes={resolvedDisputes}
+            focusOrderId={disputeFocusId}
+            onFocusConsumed={() => setDisputeFocusId(null)}
+            onResolved={(orderId) => {
+              console.log('onResolved called for', orderId)
+              setActiveDisputes(prev => {
+                console.log('prev active disputes:', prev.map(d => d.id))
+                const resolved = prev.find(d => d.id === orderId)
+                if (resolved) {
+                  setResolvedDisputes(existing => [
+                    { ...resolved, is_disputed: false, resolved_at: new Date().toISOString() },
+                    ...existing,
+                  ])
+                }
+                const next = prev.filter(d => d.id !== orderId)
+                console.log('next active disputes:', next.map(d => d.id))
+                return next
+              })
+              setOrders(prev => prev.map(o => o.id === orderId ? { ...o, is_disputed: false } : o))
+            }}
+            onReversed={(orderId) => {
+              setResolvedDisputes(prev => prev.filter(d => d.id !== orderId))
+              setActiveDisputes(prev => {
+                // Only add back if not already present (reversal re-opens the dispute)
+                const existing = prev.find(d => d.id === orderId)
+                if (existing) return prev
+                const reversed = resolvedDisputes.find(d => d.id === orderId)
+                return reversed ? [{ ...reversed, is_disputed: true }, ...prev] : prev
+              })
+            }}
+          />
         )}
 
         {activeTab === 'Applications' && (
           <div className="flex flex-col gap-4">
-            {pendingApplications.length === 0 ? (
-              <div className="bg-white rounded-2xl p-12 shadow-sm text-center"><p className="text-2xl mb-2">✓</p><p className="font-semibold" style={{ color: '#2d1a0e' }}>No pending applications</p></div>
-            ) : pendingApplications.map(baker => (
+            {applications.length === 0 ? (
+              <div className="bg-white rounded-2xl p-12 shadow-sm text-center">
+                <p className="text-2xl mb-2">✓</p>
+                <p className="font-semibold" style={{ color: '#2d1a0e' }}>No pending applications</p>
+              </div>
+            ) : applications.map(baker => (
               <div key={baker.id} className="bg-white rounded-2xl p-6 shadow-sm">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
-                      {baker.profile_photo_url ? <img src={baker.profile_photo_url} alt="" className="w-full h-full object-cover" /> : <span className="text-xl font-bold" style={{ color: '#2d1a0e' }}>{baker.business_name?.[0] || 'B'}</span>}
+                <div className="flex items-start justify-between gap-6">
+                  {/* Left: all baker info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 flex-wrap mb-2">
+                      <p className="font-bold text-base" style={{ color: '#2d1a0e' }}>{baker.business_name}</p>
+                      {baker.is_cottage_baker && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Cottage baker</span>
+                      )}
                     </div>
-                    <div>
-                      <p className="font-bold" style={{ color: '#2d1a0e' }}>{baker.business_name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{baker.email}</p>
-                      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{baker.city}, {baker.state}</p>
-                      {baker.specialties?.length > 0 && <p className="text-xs mt-1" style={{ color: '#8B4513' }}>{baker.specialties.join(', ')}</p>}
-                      {baker.bio && <p className="text-xs mt-1 max-w-md" style={{ color: '#5c3d2e' }}>{baker.bio}</p>}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 mb-3">
+                      {baker.owner_name && (
+                        <p className="text-sm" style={{ color: '#2d1a0e' }}>
+                          <span className="font-semibold">Owner: </span>{baker.owner_name}
+                        </p>
+                      )}
+                      <p className="text-sm" style={{ color: '#5c3d2e' }}>
+                        <span className="font-semibold">Location: </span>{baker.city}, {baker.state}
+                      </p>
+                      <p className="text-sm" style={{ color: '#5c3d2e' }}>
+                        <span className="font-semibold">Email: </span>{baker.email}
+                      </p>
+                      <p className="text-sm" style={{ color: '#5c3d2e' }}>
+                        <span className="font-semibold">Applied: </span>{new Date(baker.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                      {baker.how_did_you_hear && (
+                        <p className="text-sm" style={{ color: '#5c3d2e' }}>
+                          <span className="font-semibold">How they heard: </span>{baker.how_did_you_hear}
+                        </p>
+                      )}
                     </div>
+                    {baker.bio && (
+                      <p className="text-sm leading-relaxed" style={{ color: '#5c3d2e' }}>{baker.bio}</p>
+                    )}
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <Link href={'/bakers/' + baker.id} target="_blank" className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>View Profile</Link>
-                    <button onClick={() => approveBaker(baker)} className="px-4 py-2 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166534' }}>Approve</button>
-                    <button onClick={() => rejectBaker(baker)} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Reject</button>
+
+                  {/* Right: actions */}
+                  <div className="flex flex-col gap-2 flex-shrink-0 items-end">
+                    <Link href={'/bakers/' + baker.id} target="_blank" className="px-4 py-2 rounded-lg text-xs font-semibold border text-center" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>View Profile</Link>
+                    <button
+                      onClick={() => approveBakerApplication(baker)}
+                      disabled={approvingId === baker.id}
+                      className="px-4 py-2 rounded-lg text-xs font-semibold text-white"
+                      style={{ backgroundColor: '#166534', opacity: approvingId === baker.id ? 0.6 : 1 }}>
+                      {approvingId === baker.id ? 'Approving...' : 'Approve'}
+                    </button>
+                    {rejectingId !== baker.id ? (
+                      <button
+                        onClick={() => { setRejectingId(baker.id); setRejectReason('') }}
+                        className="px-4 py-2 rounded-lg text-xs font-semibold border"
+                        style={{ borderColor: '#dc2626', color: '#dc2626' }}>
+                        Reject
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-2 w-56">
+                        <textarea
+                          value={rejectReason}
+                          onChange={e => setRejectReason(e.target.value)}
+                          placeholder="Reason for rejection (included in email)"
+                          rows={3}
+                          className="w-full px-3 py-2 rounded-lg border text-xs resize-none"
+                          style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { setRejectingId(null); setRejectReason('') }}
+                            className="flex-1 py-1.5 rounded-lg text-xs font-semibold border"
+                            style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => rejectBakerApplication(baker, rejectReason.trim())}
+                            disabled={!rejectReason.trim()}
+                            className="flex-1 py-1.5 rounded-lg text-xs font-semibold text-white"
+                            style={{ backgroundColor: '#dc2626', opacity: !rejectReason.trim() ? 0.4 : 1 }}>
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -552,7 +812,7 @@ export default function AdminPanel() {
             const key = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
             if (!monthMap[key]) monthMap[key] = { gmv: 0, commission: 0 }
             const total = (o.amount_total || (o.budget * 100) || 0) / 100
-            const rate = o.bakers?.is_pro ? 0.07 : 0.10
+            const rate = o.bakers?.tier === 'pro' ? 0.07 : 0.10
             monthMap[key].gmv += total
             monthMap[key].commission += total * rate
           })
@@ -565,7 +825,7 @@ export default function AdminPanel() {
                   { label: 'All-time GMV', value: '$' + totalGMV.toFixed(2) },
                   { label: 'All-time Commission', value: '$' + totalCommission.toFixed(2) },
                   { label: 'Total Reserve Held', value: '$' + totalReserve.toFixed(2) },
-                  { label: 'Avg Commission Rate', value: bakers.length ? ((bakers.filter(b => b.is_pro).length / bakers.length) * 7 + (1 - bakers.filter(b => b.is_pro).length / bakers.length) * 10).toFixed(1) + '%' : '10%' },
+                  { label: 'Avg Commission Rate', value: bakers.length ? ((bakers.filter(b => b.tier === 'pro').length / bakers.length) * 7 + (1 - bakers.filter(b => b.tier === 'pro').length / bakers.length) * 10).toFixed(1) + '%' : '10%' },
                 ].map(s => (
                   <div key={s.label} className="bg-white rounded-2xl p-5 shadow-sm">
                     <p className="text-xs font-semibold mb-1" style={{ color: '#5c3d2e' }}>{s.label}</p>
@@ -702,7 +962,7 @@ export default function AdminPanel() {
                   const filtered = getFilteredOrders()
                   const paidOrders = filtered.filter(o => o.deposit_paid_at)
                   const gmv = paidOrders.reduce((s, o) => s + (o.amount_total || (o.budget * 100) || 0), 0) / 100
-                  const commission = paidOrders.reduce((s, o) => { const rate = o.bakers?.is_pro ? 0.07 : 0.10; return s + ((o.amount_total || (o.budget * 100) || 0) / 100) * rate }, 0)
+                  const commission = paidOrders.reduce((s, o) => { const rate = o.bakers?.tier === 'pro' ? 0.07 : 0.10; return s + ((o.amount_total || (o.budget * 100) || 0) / 100) * rate }, 0)
                   return [
                     { label: 'GMV', value: '$' + gmv.toFixed(2) },
                     { label: 'Commission', value: '$' + commission.toFixed(2) },
@@ -729,7 +989,7 @@ export default function AdminPanel() {
                       const bakerOrders = getFilteredOrders().filter(o => o.baker_id === baker.id && o.deposit_paid_at)
                       if (bakerOrders.length === 0) return null
                       const gross = bakerOrders.reduce((s, o) => s + (o.amount_total || (o.budget * 100) || 0), 0) / 100
-                      const rate = baker.is_pro ? 0.07 : 0.10
+                      const rate = baker.tier === 'pro' ? 0.07 : 0.10
                       const payout = gross * (1 - rate)
                       return (
                         <tr key={baker.id} className="border-b" style={{ borderColor: '#f5f0eb' }}>
@@ -747,6 +1007,39 @@ export default function AdminPanel() {
             </div>
           </div>
         )}
+        {activeTab === 'Messages' && (
+          <div className="flex flex-col gap-6">
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Flagged Messages</h2>
+                  <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Messages containing potential off-platform contact info or payment requests</p>
+                </div>
+                <span className="text-sm font-semibold px-3 py-1 rounded-lg" style={{ backgroundColor: '#fff7ed', color: '#92400e' }}>{flaggedMessages.length} flagged</span>
+              </div>
+              {flaggedMessages.length === 0 ? (
+                <p className="text-sm text-center py-8" style={{ color: '#9c7b6b' }}>No flagged messages</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {flaggedMessages.map(msg => (
+                    <div key={msg.id} className="rounded-xl border p-4" style={{ borderColor: '#fbbf24', backgroundColor: '#fffbeb' }}>
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>⚑ {msg.flagged_reason}</span>
+                          {msg.order_id && <span className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Order: {msg.order_id.slice(0, 8)}…</span>}
+                        </div>
+                        <span className="text-xs flex-shrink-0" style={{ color: '#9c7b6b' }}>{new Date(msg.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <p className="text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: 'white', color: '#2d1a0e', borderLeft: '3px solid #fbbf24' }}>{msg.content}</p>
+                      <p className="text-xs mt-2" style={{ color: '#9c7b6b' }}>Sender ID: {msg.sender_id || '—'}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   )

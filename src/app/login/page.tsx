@@ -28,13 +28,17 @@ export default function Login() {
 
     // Check if baker or customer and redirect accordingly
     const { data: { user } } = await supabase.auth.getUser()
-    const { data: baker } = await supabase.from('bakers').select('id').eq('user_id', user?.id).single()
+    const { data: baker } = await supabase
+      .from('bakers')
+      .select('id, is_active')
+      .eq('user_id', user?.id)
+      .maybeSingle()
 
-if (baker) {
-  router.push('/dashboard/baker')
-} else {
-  router.push('/dashboard/customer')
-}
+    if (baker) {
+      router.push(baker.is_active ? '/dashboard/baker' : '/application-pending')
+    } else {
+      router.push('/dashboard/customer')
+    }
   }
 
   return (
@@ -97,7 +101,7 @@ if (baker) {
           Don't have an account?{' '}
           <Link href="/signup" className="font-semibold underline" style={{ color: '#2d1a0e' }}>Create a customer account</Link>
         {' or '}
-        <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>join as a baker</Link>
+        <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>apply as a baker</Link>
         </p>
       </div>
     </main>

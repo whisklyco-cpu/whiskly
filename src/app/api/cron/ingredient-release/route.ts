@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   const { data: orders } = await supabase
     .from('orders')
-    .select('*, bakers(id, stripe_account_id, business_name, email, is_pro)')
+    .select('*, bakers(id, stripe_account_id, business_name, email, tier)')
     .eq('status', 'confirmed')
     .not('deposit_paid_at', 'is', null)
     .is('ingredient_release_at', null)

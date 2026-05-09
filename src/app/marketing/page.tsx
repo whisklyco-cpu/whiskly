@@ -105,8 +105,8 @@ export default function MarketingPortal() {
   async function loadData() {
     setLoading(true)
     const [{ data: bakersData }, { data: featuredData }, { data: logsData }] = await Promise.all([
-      supabase.from('bakers').select('id, business_name, city, state, profile_photo_url, is_pro, tier, featured_since').eq('is_active', true).eq('profile_complete', true).order('business_name'),
-      supabase.from('bakers').select('id, business_name, city, state, profile_photo_url, is_pro, tier, featured_since').eq('is_featured', true).order('featured_since', { ascending: false }),
+      supabase.from('bakers').select('id, business_name, city, state, profile_photo_url, tier, featured_since').eq('is_active', true).eq('profile_complete', true).order('business_name'),
+      supabase.from('bakers').select('id, business_name, city, state, profile_photo_url, tier, featured_since').eq('is_featured', true).order('featured_since', { ascending: false }),
       supabase.from('marketing_logs').select('*').order('created_at', { ascending: false }),
     ])
     setBakers(bakersData || [])
@@ -297,7 +297,7 @@ export default function MarketingPortal() {
                       {b.profile_photo_url && <img src={b.profile_photo_url} alt={b.business_name} className="w-10 h-10 rounded-full object-cover" />}
                       <div>
                         <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{b.business_name}</p>
-                        <p className="text-xs" style={{ color: '#9c7b6b' }}>{b.city}, {b.state} · {b.is_pro ? 'Pro' : 'Free'} · {featuredDays(b.featured_since)} days featured</p>
+                        <p className="text-xs" style={{ color: '#9c7b6b' }}>{b.city}, {b.state} · {b.tier === 'pro' ? 'Pro' : 'Free'} · {featuredDays(b.featured_since)} days featured</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -316,7 +316,7 @@ export default function MarketingPortal() {
                   <div key={b.id} className="flex items-center justify-between p-3 rounded-xl border" style={{ borderColor: '#e0d5cc' }}>
                     <div>
                       <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{b.business_name}</p>
-                      <p className="text-xs" style={{ color: '#9c7b6b' }}>{b.city}, {b.state} · {b.is_pro ? 'Pro' : 'Free'}</p>
+                      <p className="text-xs" style={{ color: '#9c7b6b' }}>{b.city}, {b.state} · {b.tier === 'pro' ? 'Pro' : 'Free'}</p>
                     </div>
                     <button onClick={() => featureBaker(b.id)} className="text-xs px-3 py-1.5 rounded-lg text-white font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Feature</button>
                   </div>

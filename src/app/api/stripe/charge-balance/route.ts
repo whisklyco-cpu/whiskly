@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
     const { data: order } = await supabase
       .from('orders')
-      .select('*, bakers(id, stripe_account_id, is_pro, business_name)')
+      .select('*, bakers(id, stripe_account_id, tier, business_name)')
       .eq('id', order_id)
       .maybeSingle()
 
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       payment_method: paymentMethodId,
       confirm: true,
       off_session: true,
-      automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+      payment_method_types: ['card'],
       metadata: { order_id, type: 'balance' },
       description: `Whiskly balance — Order ${order_id.slice(0, 8)} — ${order.event_type || 'Custom Order'}`,
     })

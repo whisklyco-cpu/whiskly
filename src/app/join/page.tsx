@@ -165,24 +165,65 @@ export default function JoinPage() {
 
   async function handleSubmit() {
     if (!bakerData.agreed_to_terms) {
-  setError('Please agree to the Whiskly Seller Terms to continue.')
-  return
-}
-if (!bakerData.bio) {
-  setError('Please write a short bio before submitting.')
-  return
-}
+      setError('Please agree to the Whiskly Seller Terms to continue.')
+      return
+    }
+    if (!bakerData.bio) {
+      setError('Please write a short bio before submitting.')
+      return
+    }
     setLoading(true)
     setError('')
 
-    // Create auth account
+    // Attempt to create auth account
+    let userId: string | null = null
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: bakerData.email,
       password: bakerData.password,
       options: { data: { full_name: bakerData.full_name, role: 'baker' } }
     })
 
-    if (authError) { setError(authError.message); setLoading(false); return }
+    if (authError) {
+      const isAlreadyRegistered =
+        authError.message.toLowerCase().includes('already registered') ||
+        authError.message.toLowerCase().includes('user already') ||
+        authError.message.toLowerCase().includes('already been registered')
+
+      if (isAlreadyRegistered) {
+        // Auth user already exists. Try to sign in so we can create the baker profile.
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: bakerData.email,
+          password: bakerData.password,
+        })
+        if (signInError || !signInData.user) {
+          setError(
+            'An account with this email already exists. If you started an application before, please sign in at /login — or contact support@whiskly.co for help.'
+          )
+          setLoading(false)
+          return
+        }
+        // Check if a baker profile was already created for this user
+        const { data: existingBaker } = await supabase.from('bakers').select('id, is_active').eq('user_id', signInData.user.id).maybeSingle()
+        if (existingBaker) {
+          // Profile already exists — send them to the right place
+          router.push(existingBaker.is_active ? '/dashboard/baker' : '/application-pending')
+          return
+        }
+        userId = signInData.user.id
+      } else {
+        setError(authError.message)
+        setLoading(false)
+        return
+      }
+    } else {
+      userId = authData.user?.id ?? null
+    }
+
+    if (!userId) {
+      setError('Unable to create your account. Please try again or contact support@whiskly.co.')
+      setLoading(false)
+      return
+    }
 
     // Upload verification doc if storefront baker
     let verification_file_url = null
@@ -201,8 +242,12 @@ if (!bakerData.bio) {
     }
 
     // Create baker profile
+    // serves_zip_codes is text[] in the DB — the form stores a radius value (e.g. "50" miles)
+    // wrap it in an array to satisfy the column type
+    const servesZipCodesArray = bakerData.serves_zip_codes ? [bakerData.serves_zip_codes] : []
+
     const { error: bakerError } = await supabase.from('bakers').insert({
-      user_id: authData.user?.id,
+      user_id: userId,
       business_name: bakerData.business_name,
       email: bakerData.email,
       phone: bakerData.phone,
@@ -220,8 +265,8 @@ if (!bakerData.bio) {
       verification_status: !bakerData.is_cottage_baker ? 'pending' : 'unverified',
       specialties: bakerData.specialties,
       dietary_tags: bakerData.dietary_tags,
-      years_experience: bakerData.years_experience,
-      serves_zip_codes: bakerData.serves_zip_codes,
+      years_experience: parseInt(bakerData.years_experience) || null,
+      serves_zip_codes: servesZipCodesArray,
       delivery_available: bakerData.delivery_available,
       pickup_available: bakerData.pickup_available,
       delivery_fee_range: bakerData.delivery_fee_range,
@@ -237,14 +282,14 @@ if (!bakerData.bio) {
       cancellation_policy: bakerData.cancellation_policy,
       communication_preference: bakerData.communication_preference,
       agreed_to_terms: bakerData.agreed_to_terms,
-      is_active: true,
+      is_active: false,
       profile_complete: true,
       tier: 'free',
     })
 
     if (bakerError) { setError(bakerError.message); setLoading(false); return }
 
-    router.push('/dashboard/baker')
+    router.push('/application-pending')
   }
 
   const steps = [

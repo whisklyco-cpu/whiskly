@@ -91,7 +91,7 @@ export default function HeroSection({ featuredBaker }: { featuredBaker: Featured
             Browse bakers
           </Link>
           <Link href="/join" className="px-6 py-3 rounded-xl font-semibold text-sm border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
-            Become a baker →
+            Apply as a Baker →
           </Link>
         </div>
 
@@ -154,7 +154,7 @@ export default function HeroSection({ featuredBaker }: { featuredBaker: Featured
           {featuredBaker ? (
             <Link href={`/bakers/${featuredBaker.id}`}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-[#f5f0eb] flex items-center justify-center">
                   {featuredBaker.profile_photo_url ? (
                     <img src={featuredBaker.profile_photo_url} alt={featuredBaker.business_name} className="w-full h-full object-cover" />
                   ) : (
@@ -177,7 +177,7 @@ export default function HeroSection({ featuredBaker }: { featuredBaker: Featured
             </Link>
           ) : (
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-[#f5f0eb] flex items-center justify-center">
                 <span className="text-xl">🎂</span>
               </div>
               <div>

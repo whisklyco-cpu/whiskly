@@ -42,7 +42,7 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="bg-white shadow-sm relative z-50">
+    <nav className="bg-white shadow-sm relative" style={{ zIndex: 1000 }}>
       <div className="flex items-center justify-between px-5 md:px-8 py-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
@@ -73,7 +73,7 @@ export default function Navbar() {
                 <>
                   <Link href="/login" className="px-4 py-2 text-sm rounded-lg border font-medium" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Sign In</Link>
                   <Link href="/signup" className="px-4 py-2 text-sm rounded-lg border font-medium" style={{ borderColor: '#8B4513', color: '#8B4513' }}>Create Account</Link>
-                  <Link href="/join" className="px-4 py-2 text-sm rounded-lg text-white font-medium" style={{ backgroundColor: '#2d1a0e' }}>Join as Baker</Link>
+                  <Link href="/join" className="px-4 py-2 text-sm rounded-lg text-white font-medium" style={{ backgroundColor: '#2d1a0e' }}>Apply as a Baker</Link>
                 </>
               )}
             </>
@@ -88,9 +88,17 @@ export default function Navbar() {
         </button>
       </div>
 
-      {/* Mobile menu dropdown */}
+      {/* Mobile menu dropdown — absolutely positioned so it floats above page content */}
       {menuOpen && (
-        <div className="md:hidden border-t px-5 py-4 flex flex-col gap-1" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
+        <>
+          {/* Backdrop — closes menu on tap outside */}
+          <div
+            className="md:hidden fixed inset-0"
+            style={{ zIndex: 999, backgroundColor: 'transparent' }}
+            onClick={() => setMenuOpen(false)}
+          />
+          <div className="md:hidden absolute left-0 right-0 border-t px-5 py-4 flex flex-col gap-1 shadow-lg"
+            style={{ borderColor: '#e0d5cc', backgroundColor: 'white', top: '100%', zIndex: 1000 }}>
           <Link href="/bakers" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#2d1a0e', borderColor: '#f5f0eb' }}>Browse Bakers</Link>
           <Link href="/for-bakers" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#2d1a0e', borderColor: '#f5f0eb' }}>For Bakers</Link>
           <Link href="/faq" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#2d1a0e', borderColor: '#f5f0eb' }}>FAQ</Link>
@@ -117,13 +125,14 @@ export default function Navbar() {
                   <>
                     <Link href="/login" onClick={() => setMenuOpen(false)} className="w-full text-center px-4 py-3 text-sm rounded-xl border font-semibold" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Sign In</Link>
                     <Link href="/signup" onClick={() => setMenuOpen(false)} className="w-full text-center px-4 py-3 text-sm rounded-xl border font-semibold" style={{ borderColor: '#8B4513', color: '#8B4513' }}>Create Account</Link>
-                    <Link href="/join" onClick={() => setMenuOpen(false)} className="w-full text-center px-4 py-3 text-sm rounded-xl text-white font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Join as Baker</Link>
+                    <Link href="/join" onClick={() => setMenuOpen(false)} className="w-full text-center px-4 py-3 text-sm rounded-xl text-white font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Apply as a Baker</Link>
                   </>
                 )}
               </>
             )}
           </div>
         </div>
+        </>
       )}
     </nav>
   )

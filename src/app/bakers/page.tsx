@@ -88,16 +88,22 @@ export default function BrowseBakers() {
         b.specialties?.some((s: string) => s.toLowerCase().includes(q))
       )
     }
-    if (selectedSpecialty) results = results.filter(b => b.specialties?.includes(selectedSpecialty))
-    if (selectedDietary) results = results.filter(b => b.dietary_tags?.includes(selectedDietary))
+    if (selectedSpecialty) results = results.filter(b =>
+      Array.isArray(b.specialties) && b.specialties.some((s: string) => s === selectedSpecialty)
+    )
+    if (selectedDietary) results = results.filter(b =>
+      Array.isArray(b.dietary_tags) && b.dietary_tags.some((t: string) => t === selectedDietary)
+    )
     if (maxPrice) results = results.filter(b => !b.starting_price || b.starting_price <= parseInt(maxPrice))
-    if (deliveryOnly) results = results.filter(b => b.delivery_available)
-    if (rushOnly) results = results.filter(b => b.rush_orders_available)
+    if (deliveryOnly) results = results.filter(b => b.delivery_available === true)
+    if (rushOnly) results = results.filter(b => b.rush_orders_available === true)
 
     results.sort((a, b) => {
-      // Pro bakers always first
+      // Pro bakers always first, then Top Bakers
       if (a.tier === 'pro' && b.tier !== 'pro') return -1
       if (b.tier === 'pro' && a.tier !== 'pro') return 1
+      if (a.is_top_baker && !b.is_top_baker) return -1
+      if (b.is_top_baker && !a.is_top_baker) return 1
       if (sortBy === 'top_rated') return (b.avg_rating || 0) - (a.avg_rating || 0)
       if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       if (sortBy === 'price_asc') return (a.starting_price || 9999) - (b.starting_price || 9999)
@@ -118,7 +124,7 @@ export default function BrowseBakers() {
         blockedBakerIds = (blockData || []).map((b: any) => b.blocked_id)
       }
     }
-    const { data } = await supabase.from('bakers').select('*').eq('is_active', true).eq('profile_complete', true)
+    const { data } = await supabase.from('bakers').select('*').eq('is_active', true).eq('profile_complete', true).or('is_listed.eq.true,is_listed.is.null')
     const visibleBakers = (data || []).filter((b: any) => !blockedBakerIds.includes(b.id))
     setBakers(visibleBakers)
     setFiltered(visibleBakers)
@@ -354,6 +360,9 @@ export default function BrowseBakers() {
                         <div className="absolute top-3 left-3 flex flex-col gap-1">
                           {baker.tier === 'pro' && (
                             <span className="px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#2d1a0e', color: 'white' }}>Pro</span>
+                          )}
+                          {baker.is_top_baker && (
+                            <span className="px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>⭐ Top Baker</span>
                           )}
                           {baker.is_founding_baker && (
                             <span className="px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#8B4513', color: 'white' }}>Founding Baker</span>

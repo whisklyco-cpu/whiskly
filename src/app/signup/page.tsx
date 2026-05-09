@@ -187,7 +187,7 @@ export default function CustomerSignup() {
         </p>
         <p className="text-center text-sm mt-2" style={{ color: '#5c3d2e' }}>
           Want to sell on Whiskly?{' '}
-          <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>Join as a Baker</Link>
+          <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>Apply as a Baker</Link>
         </p>
       </div>
     </main>

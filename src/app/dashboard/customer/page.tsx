@@ -37,9 +37,18 @@ function CustomerDashboardInner() {
   const [newDateDay, setNewDateDay] = useState('')
   const [savingDate, setSavingDate] = useState(false)
 
+  const [phoneValue, setPhoneValue] = useState('')
+  const [savingPhone, setSavingPhone] = useState(false)
+  const [phoneSaved, setPhoneSaved] = useState(false)
+
   // Payment state
   const [paymentOrder, setPaymentOrder] = useState<any>(null)
   const [paymentType, setPaymentType] = useState<'deposit' | 'remainder'>('deposit')
+
+  // Payment plan choice modal (shown for eligible confirmed orders before deposit)
+  const [planChoiceOrder, setPlanChoiceOrder] = useState<any>(null)
+  const [planChoiceSelection, setPlanChoiceSelection] = useState<'standard' | 'installments'>('standard')
+  const [submittingPlanChoice, setSubmittingPlanChoice] = useState(false)
 
   // Cancel order state
   const [cancelOrder, setCancelOrder] = useState<any>(null)
@@ -63,12 +72,25 @@ function CustomerDashboardInner() {
   const [blockingBaker, setBlockingBaker] = useState(false)
   const [showDotsOrderId, setShowDotsOrderId] = useState<string | null>(null)
 
+  // Size reduction state
+  const [sizeReductionOrder, setSizeReductionOrder] = useState<any>(null)
+  const [sizeReductionServings, setSizeReductionServings] = useState('')
+  const [submittingSizeReduction, setSubmittingSizeReduction] = useState(false)
+
+  // Needs Attention collapsed state
+  const [needsAttentionCollapsed, setNeedsAttentionCollapsed] = useState(false)
+
   // Tip state
   const [tipOrder, setTipOrder] = useState<any>(null)
   const [tipSelection, setTipSelection] = useState<'10' | '15' | '20' | 'custom'>('15')
   const [tipCustomAmount, setTipCustomAmount] = useState('')
   const [sendingTip, setSendingTip] = useState(false)
+  const [tipSuccess, setTipSuccess] = useState(false)
+  const [tipError, setTipError] = useState<string | null>(null)
   const [dismissedTips, setDismissedTips] = useState<string[]>([])
+
+  // Off-platform message monitoring
+  const [offPlatformWarning, setOffPlatformWarning] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -104,6 +126,25 @@ function CustomerDashboardInner() {
       }
     }
   }, [orders, searchParams])
+
+  // Auto-show payment plan choice modal for eligible confirmed orders that haven't set payment_plan yet
+  useEffect(() => {
+    if (planChoiceOrder) return // already showing
+    const eligible = orders.find(o =>
+      o.status === 'confirmed' &&
+      !o.deposit_paid_at &&
+      o.payment_plan === null &&
+      o.bakers?.payment_plans_enabled &&
+      (o.confirmed_price != null ? o.confirmed_price / 100 : o.budget) >= 500
+    )
+    if (eligible) {
+      setPlanChoiceSelection((o => {
+        const price = o.confirmed_price != null ? o.confirmed_price / 100 : o.budget
+        return price >= 750 ? 'installments' : 'standard'
+      })(eligible))
+      setPlanChoiceOrder(eligible)
+    }
+  }, [orders])
 
   useEffect(() => {
   if (activeTab === 'messages' && activeOrderId && currentUserId) {
@@ -158,9 +199,10 @@ function CustomerDashboardInner() {
     const { data: customerData } = await supabase.from('customers').select('*').eq('user_id', session.user.id).maybeSingle()
     if (customerData) {
       setCustomer(customerData)
+      setPhoneValue(customerData.phone || '')
       const { data: ordersData } = await supabase
   .from('orders')
-  .select('*, bakers(id, business_name, profile_photo_url, city, state, pickup_address, pickup_zip)')
+  .select('*, bakers(id, business_name, profile_photo_url, city, state, pickup_address, pickup_zip, payment_plans_enabled)')
   .eq('customer_email', customerData.email)
   .order('created_at', { ascending: false })
       setOrders(ordersData || [])
@@ -237,19 +279,94 @@ function CustomerDashboardInner() {
   }
 }
 
+  function detectOffPlatformPattern(text: string): string | null {
+    const lower = text.toLowerCase()
+    if (/(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/.test(text)) return 'phone number'
+    if (/[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(text)) return 'email address'
+    if (/@[a-zA-Z0-9_]{2,}/.test(text)) return '@handle'
+    const phrases = ['venmo', 'zelle', 'cash app', 'cashapp', 'paypal', 'apple pay', 'applepay', 'text me', 'call me', 'my number', 'my email', 'reach me', 'contact me outside', 'dm me', 'direct message', 'whatsapp', 'telegram', 'snapchat']
+    for (const phrase of phrases) { if (lower.includes(phrase)) return `"${phrase}"` }
+    return null
+  }
+
   async function sendMessage() {
-  if (!newMessage.trim() || !currentUserId || !activeConvo) return
+    if (!newMessage.trim() || !currentUserId || !activeConvo) return
     setSendingMessage(true)
+    const msgContent = newMessage.trim()
+    const pattern = detectOffPlatformPattern(msgContent)
     const { data: bakerUser } = await supabase.from('bakers').select('user_id').eq('id', activeConvo.baker.id).maybeSingle()
-const conv = conversations.find(c => c.thread_key === activeOrderId)
-await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: bakerUser?.user_id, baker_id: activeConvo.baker.id, order_id: conv?.order_id || null, content: newMessage.trim() })
-  setNewMessage('')
+    const conv = conversations.find(c => c.thread_key === activeOrderId)
+    await supabase.from('messages').insert({
+      sender_id: currentUserId,
+      receiver_id: bakerUser?.user_id,
+      baker_id: activeConvo.baker.id,
+      order_id: conv?.order_id || null,
+      content: msgContent,
+      ...(pattern ? { is_flagged: true, flagged_reason: pattern } : {}),
+    })
+    setNewMessage('')
     setSendingMessage(false)
+    if (pattern) setOffPlatformWarning(pattern)
     loadThread(activeOrderId)
     loadConversations()
   }
 
   function openThread(orderId: string) { setActiveOrderId(orderId); setActiveTab('messages'); loadThread(orderId) }
+
+  async function submitPlanChoice() {
+    if (!planChoiceOrder) return
+    setSubmittingPlanChoice(true)
+    const usePlan = planChoiceSelection === 'installments'
+    const price = planChoiceOrder.confirmed_price != null ? planChoiceOrder.confirmed_price / 100 : planChoiceOrder.budget
+    const payment2Date = (() => {
+      const eventDate = new Date(planChoiceOrder.event_date + 'T00:00:00')
+      const midMs = (Date.now() + eventDate.getTime()) / 2
+      return new Date(midMs).toISOString()
+    })()
+    await supabase.from('orders').update({
+      payment_plan: usePlan,
+      payment_plan_payment2_date: usePlan ? payment2Date : null,
+      payment_plan_payment2_amount: usePlan ? Math.round(price * 100 * 0.33) : null,
+    }).eq('id', planChoiceOrder.id)
+    setOrders(prev => prev.map(o => o.id === planChoiceOrder.id ? { ...o, payment_plan: usePlan } : o))
+    setPlanChoiceOrder(null)
+    setSubmittingPlanChoice(false)
+    // Trigger deposit payment
+    setPaymentOrder({ ...planChoiceOrder, payment_plan: usePlan })
+    setPaymentType('deposit')
+  }
+
+  async function submitSizeReduction() {
+    if (!sizeReductionOrder || !sizeReductionServings) return
+    const requestedServings = parseInt(sizeReductionServings)
+    const originalServings = parseInt(sizeReductionOrder.servings) || 0
+    if (requestedServings >= originalServings) return
+    setSubmittingSizeReduction(true)
+    const now = new Date().toISOString()
+    await supabase.from('orders').update({
+      size_reduction_requested: true,
+      size_reduction_original_servings: originalServings,
+      size_reduction_requested_servings: requestedServings,
+      size_reduction_requested_at: now,
+      size_reduction_status: 'pending',
+    }).eq('id', sizeReductionOrder.id)
+    // Notify baker via message
+    const { data: bakerData } = await supabase.from('bakers').select('user_id, email, business_name').eq('id', sizeReductionOrder.baker_id).maybeSingle()
+    if (bakerData) {
+      await supabase.from('messages').insert({
+        sender_id: customer?.user_id,
+        receiver_id: bakerData.user_id,
+        baker_id: sizeReductionOrder.baker_id,
+        order_id: sizeReductionOrder.id,
+        content: sizeReductionOrder.customer_name + ' has requested a size reduction for their ' + sizeReductionOrder.event_type + ' order from ' + originalServings + ' servings to ' + requestedServings + ' servings. Review and respond in your dashboard.',
+      })
+      fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'announcement', to: bakerData.email, name: bakerData.business_name, subject: 'Size reduction request — ' + sizeReductionOrder.customer_name, body: 'Your customer ' + sizeReductionOrder.customer_name + ' has requested a size reduction for their ' + sizeReductionOrder.event_type + ' order from ' + originalServings + ' servings to ' + requestedServings + ' servings. Review and respond in your dashboard.' }) }).catch(() => {})
+    }
+    setOrders(prev => prev.map(o => o.id === sizeReductionOrder.id ? { ...o, size_reduction_requested: true, size_reduction_status: 'pending', size_reduction_original_servings: originalServings, size_reduction_requested_servings: requestedServings } : o))
+    setSizeReductionOrder(null)
+    setSizeReductionServings('')
+    setSubmittingSizeReduction(false)
+  }
 
   async function markReceived(orderId: string) {
     await supabase.from('orders').update({ status: 'complete' }).eq('id', orderId)
@@ -299,11 +416,14 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
     return Math.round((new Date(year, month - 1, day).getTime() - today.getTime()) / 86400000)
   }
 
-  function getProgressStep(status: string) {
+  function getProgressStep(order: any) {
+    const { status, deposit_paid_at } = order
     if (status === 'pending') return 0
-    if (status === 'confirmed' || status === 'in_progress') return 2
-    if (status === 'ready') return 3
-    if (status === 'complete') return 4
+    if (status === 'confirmed' && !deposit_paid_at) return 1
+    if (status === 'confirmed' && deposit_paid_at) return 2
+    if (status === 'in_progress') return 3
+    if (status === 'ready') return 4
+    if (status === 'complete') return 5
     return 0
   }
 
@@ -372,7 +492,8 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
         // Fallback to PaymentModal (baker has Stripe Connect)
         openPayment(order, 'deposit')
       }
-    } catch {
+    } catch (err) {
+      console.error('Checkout session failed, falling back to PaymentModal', err)
       openPayment(order, 'deposit')
     }
   }
@@ -427,31 +548,54 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
       cancellation_reason: cancelReason,
       cancelled_at: now,
     }).eq('id', cancelOrder.id)
-    // Refund logic for confirmed orders with deposit paid
-    if (cancelOrder.status === 'confirmed' && cancelOrder.deposit_paid_at) {
-      if (daysUntil >= 7) {
+    if (!cancelOrder.deposit_paid_at) {
+      // Pre-deposit cancellation — no Stripe call, no strike, no penalty
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'announcement',
+          to: cancelOrder.bakers?.email,
+          name: cancelOrder.bakers?.business_name,
+          subject: 'Order request cancelled — no action needed',
+          body: cancelOrder.customer_name + ' cancelled their ' + cancelOrder.event_type + ' request before paying the deposit. No action needed on your end.',
+        }),
+      }).catch(() => {})
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'announcement',
+          to: cancelOrder.customer_email,
+          name: cancelOrder.customer_name,
+          subject: 'Your order request has been cancelled — Whiskly',
+          body: 'Your order request has been cancelled. No charges were made to your account.',
+        }),
+      }).catch(() => {})
+    } else {
+      // Post-deposit cancellation — existing refund logic
+      if (cancelOrder.status === 'confirmed' && daysUntil >= 7) {
         await fetch('/api/stripe/refund', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ order_id: cancelOrder.id }),
         }).catch(() => {})
       }
-      // under 7 days: no refund issued
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'customer_cancelled',
+          bakerEmail: cancelOrder.bakers?.email,
+          bakerName: cancelOrder.bakers?.business_name,
+          customerName: cancelOrder.customer_name,
+          eventType: cancelOrder.event_type,
+          eventDate: cancelOrder.event_date,
+          orderId: cancelOrder.id,
+          reason: cancelReason,
+        }),
+      }).catch(() => {})
     }
-    await fetch('/api/email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'customer_cancelled',
-        bakerEmail: cancelOrder.bakers?.email,
-        bakerName: cancelOrder.bakers?.business_name,
-        customerName: cancelOrder.customer_name,
-        eventType: cancelOrder.event_type,
-        eventDate: cancelOrder.event_date,
-        orderId: cancelOrder.id,
-        reason: cancelReason,
-      }),
-    }).catch(() => {})
     setOrders(prev => prev.map(o => o.id === cancelOrder.id ? { ...o, status: 'cancelled', cancelled_by: 'customer' } : o))
     setCancelOrder(null); setCancelReason(''); setCancelDescription(''); setCancellingOrder(false)
   }
@@ -482,6 +626,12 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
         reason: disputeReason,
         filedBy: 'customer',
       }),
+    }).catch(() => {})
+    // Initialize evidence collection — generates tokens and emails both parties
+    fetch('/api/disputes/evidence/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: disputeOrder.id }),
     }).catch(() => {})
     setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, status: 'disputed', is_disputed: true } : o))
     setDisputeOrder(null); setDisputeReason(''); setDisputeDescription(''); setFilingDispute(false)
@@ -542,30 +692,28 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
     const amountCents = getTipAmountCents(tipOrder)
     if (amountCents < 100) return
     setSendingTip(true)
+    setTipError(null)
     try {
       const res = await fetch('/api/stripe/tip', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: tipOrder.id, tip_amount_cents: amountCents }),
+        body: JSON.stringify({
+          order_id: tipOrder.id,
+          baker_id: tipOrder.baker_id,
+          tip_amount_cents: amountCents,
+          customer_email: customer?.email,
+        }),
       })
-      const { client_secret, error } = await res.json()
-      if (error || !client_secret) { setSendingTip(false); return }
-      // Dynamically load Stripe.js and confirm payment
-      const { loadStripe } = await import('@stripe/stripe-js')
-      const stripeJs = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
-      if (!stripeJs) { setSendingTip(false); return }
-      const { error: confirmError } = await stripeJs.confirmCardPayment(client_secret)
-      if (confirmError) { setSendingTip(false); return }
-      // Payment succeeded — update order and notify baker
-      const tipDollars = amountCents / 100
-      await supabase.from('orders').update({ tip_amount: amountCents } as any).eq('id', tipOrder.id)
-      await fetch('/api/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'announcement', to: tipOrder.bakers?.email || '', name: tipOrder.bakers?.business_name, subject: 'You received a tip — $' + tipDollars.toFixed(2) + ' on Whiskly', body: tipOrder.customer_name + ' left you a $' + tipDollars.toFixed(2) + ' tip for their ' + tipOrder.event_type + ' order. It goes 100% to you. Thanks for a great experience!\n\nCheck your Stripe dashboard to see the transfer.' }),
-      }).catch(() => {})
-      setOrders(prev => prev.map(o => o.id === tipOrder.id ? { ...o, tip_amount: amountCents } : o))
-      setTipOrder(null); setTipSelection('15'); setTipCustomAmount('')
+      const data = await res.json()
+      if (data.error) {
+        setTipError(data.error)
+        setSendingTip(false)
+        return
+      }
+      // Payment succeeded server-side
+      const now = data.tip_paid_at || new Date().toISOString()
+      setOrders(prev => prev.map(o => o.id === tipOrder.id ? { ...o, tip_amount: amountCents, tip_paid_at: now } : o))
+      setTipSuccess(true)
     } finally {
       setSendingTip(false)
     }
@@ -587,6 +735,16 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
     </div>
   )
 
+  const STATUS_ORDER: Record<string, number> = { in_progress: 0, confirmed: 1, ready: 2, pending: 3, countered: 4, complete: 5, declined: 6, cancelled: 7 }
+  function sortOrders(list: any[]) {
+    return [...list].sort((a, b) => {
+      const ap = STATUS_ORDER[a.status] ?? 8, bp = STATUS_ORDER[b.status] ?? 8
+      if (ap !== bp) return ap - bp
+      if (a.event_date && b.event_date) return a.event_date.localeCompare(b.event_date)
+      return a.event_date ? -1 : b.event_date ? 1 : 0
+    })
+  }
+
   const firstName = customer?.full_name?.split(' ')[0] || 'there'
   const pending = orders.filter(o => o.status === 'pending')
   const confirmed = orders.filter(o => o.status === 'confirmed')
@@ -603,7 +761,7 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
         <PaymentModal
           orderId={paymentOrder.id}
           type={paymentType}
-          amount={paymentType === 'deposit' ? Math.round(paymentOrder.budget * 50) : (paymentOrder.amount_remainder || Math.round(paymentOrder.budget * 50))}
+          amount={paymentType === 'deposit' ? Math.round(paymentOrder.budget * (paymentOrder.budget >= 750 ? 60 : 50)) : (paymentOrder.amount_remainder || Math.round(paymentOrder.budget * 50))}
           eventType={paymentOrder.event_type}
           bakerName={paymentOrder.bakers?.business_name || 'Baker'}
           onClose={() => setPaymentOrder(null)}
@@ -727,33 +885,45 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
       {tipOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Leave a tip</h3>
-            <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Tips go 100% to <strong>{tipOrder.bakers?.business_name}</strong>. Whiskly takes nothing.</p>
-            <div className="grid grid-cols-4 gap-2 mb-4">
-              {(['10','15','20'] as const).map(pct => {
-                const cents = Math.round((tipOrder.budget || 0) * parseInt(pct) / 100 * 100)
-                const dollars = (cents / 100).toFixed(2)
-                return (
-                  <button key={pct} onClick={() => setTipSelection(pct)} className="py-2 rounded-xl text-xs font-semibold text-center border transition-all" style={{ borderColor: tipSelection === pct ? '#2d1a0e' : '#e0d5cc', backgroundColor: tipSelection === pct ? '#2d1a0e' : 'white', color: tipSelection === pct ? 'white' : '#2d1a0e' }}>
-                    <div>{pct}%</div>
-                    <div className="opacity-75">${dollars}</div>
-                  </button>
-                )
-              })}
-              <button onClick={() => setTipSelection('custom')} className="py-2 rounded-xl text-xs font-semibold text-center border transition-all" style={{ borderColor: tipSelection === 'custom' ? '#2d1a0e' : '#e0d5cc', backgroundColor: tipSelection === 'custom' ? '#2d1a0e' : 'white', color: tipSelection === 'custom' ? 'white' : '#2d1a0e' }}>Custom</button>
-            </div>
-            {tipSelection === 'custom' && (
-              <div className="mb-4 flex items-center gap-2">
-                <span className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>$</span>
-                <input type="number" value={tipCustomAmount} onChange={e => setTipCustomAmount(e.target.value)} placeholder="0.00" min="1" step="0.01" className="flex-1 px-3 py-2 rounded-xl border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+            {tipSuccess ? (
+              <div className="text-center py-4">
+                <p className="text-3xl mb-3">✓</p>
+                <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Tip sent!</h3>
+                <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>Your ${(getTipAmountCents(tipOrder) / 100).toFixed(2)} tip to <strong>{tipOrder.bakers?.business_name}</strong> has been sent. Thank you for supporting a small business!</p>
+                <button onClick={() => { setTipOrder(null); setTipSuccess(false); setTipSelection('15'); setTipCustomAmount('') }} className="w-full py-2.5 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Done</button>
               </div>
+            ) : (
+              <>
+                <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Leave a tip</h3>
+                <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Tips go 100% to <strong>{tipOrder.bakers?.business_name}</strong>. Whiskly takes nothing.</p>
+                <div className="grid grid-cols-4 gap-2 mb-4">
+                  {(['10','15','20'] as const).map(pct => {
+                    const cents = Math.round((tipOrder.budget || 0) * parseInt(pct) / 100 * 100)
+                    const dollars = (cents / 100).toFixed(2)
+                    return (
+                      <button key={pct} onClick={() => setTipSelection(pct)} className="py-2 rounded-xl text-xs font-semibold text-center border transition-all" style={{ borderColor: tipSelection === pct ? '#2d1a0e' : '#e0d5cc', backgroundColor: tipSelection === pct ? '#2d1a0e' : 'white', color: tipSelection === pct ? 'white' : '#2d1a0e' }}>
+                        <div>{pct}%</div>
+                        <div className="opacity-75">${dollars}</div>
+                      </button>
+                    )
+                  })}
+                  <button onClick={() => setTipSelection('custom')} className="py-2 rounded-xl text-xs font-semibold text-center border transition-all" style={{ borderColor: tipSelection === 'custom' ? '#2d1a0e' : '#e0d5cc', backgroundColor: tipSelection === 'custom' ? '#2d1a0e' : 'white', color: tipSelection === 'custom' ? 'white' : '#2d1a0e' }}>Custom</button>
+                </div>
+                {tipSelection === 'custom' && (
+                  <div className="mb-4 flex items-center gap-2">
+                    <span className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>$</span>
+                    <input type="number" value={tipCustomAmount} onChange={e => setTipCustomAmount(e.target.value)} placeholder="0.00" min="1" step="0.01" className="flex-1 px-3 py-2 rounded-xl border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }} />
+                  </div>
+                )}
+                {tipError && <p className="text-xs mb-3 px-3 py-2 rounded-lg" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>{tipError}</p>}
+                <div className="flex gap-3">
+                  <button onClick={() => { setTipOrder(null); setTipSuccess(false); setTipError(null); setTipSelection('15'); setTipCustomAmount('') }} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+                  <button onClick={handleSendTip} disabled={sendingTip || getTipAmountCents(tipOrder) < 100} className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e', opacity: (sendingTip || getTipAmountCents(tipOrder) < 100) ? 0.5 : 1 }}>
+                    {sendingTip ? 'Sending...' : 'Send Tip — $' + (getTipAmountCents(tipOrder) / 100).toFixed(2)}
+                  </button>
+                </div>
+              </>
             )}
-            <div className="flex gap-3">
-              <button onClick={() => { setTipOrder(null); setTipSelection('15'); setTipCustomAmount('') }} className="flex-1 py-2.5 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
-              <button onClick={handleSendTip} disabled={sendingTip || getTipAmountCents(tipOrder) < 100} className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e', opacity: (sendingTip || getTipAmountCents(tipOrder) < 100) ? 0.5 : 1 }}>
-                {sendingTip ? 'Sending...' : 'Send Tip — $' + (getTipAmountCents(tipOrder) / 100).toFixed(2)}
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -769,6 +939,107 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
               <button onClick={handleBlockBaker} disabled={blockingBaker} className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#dc2626', opacity: blockingBaker ? 0.5 : 1 }}>
                 {blockingBaker ? 'Blocking...' : 'Block Baker'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Plan Choice Modal */}
+      {planChoiceOrder && (() => {
+        const price = planChoiceOrder.confirmed_price != null ? planChoiceOrder.confirmed_price / 100 : planChoiceOrder.budget
+        const eventDate = planChoiceOrder.event_date ? new Date(planChoiceOrder.event_date + 'T00:00:00') : null
+        const midDate = eventDate ? new Date((Date.now() + eventDate.getTime()) / 2) : null
+        const p3Date = eventDate ? new Date(eventDate.getTime() - 3 * 24 * 60 * 60 * 1000) : null
+        const fmtDate = (d: Date | null) => d ? d.toLocaleDateString([], { month: 'long', day: 'numeric' }) : '—'
+        const p1 = (price * 0.33).toFixed(2)
+        const p2 = (price * 0.33).toFixed(2)
+        const p3 = (price - price * 0.33 - price * 0.33).toFixed(2)
+        const deposit = (price * 0.33).toFixed(2)
+        const remainder = (price - price * 0.33).toFixed(2)
+        const isHighValue = price >= 750
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+              <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Choose how you'd like to pay</h3>
+              <p className="text-sm mb-5" style={{ color: '#5c3d2e' }}>Your order has been confirmed at <strong>${price.toFixed(2)}</strong>. Select a payment option to continue.</p>
+              <div className="flex flex-col gap-3 mb-5">
+                {/* Standard option */}
+                <button
+                  onClick={() => setPlanChoiceSelection('standard')}
+                  className="w-full text-left p-4 rounded-xl border-2 transition-all"
+                  style={{ borderColor: planChoiceSelection === 'standard' ? '#2d1a0e' : '#e0d5cc', backgroundColor: planChoiceSelection === 'standard' ? '#f5f0eb' : 'white' }}
+                >
+                  <p className="font-semibold text-sm mb-1" style={{ color: '#2d1a0e' }}>Standard — two payments</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>Pay <strong>${deposit}</strong> today as deposit, <strong>${remainder}</strong> due 3 days before your event on {fmtDate(p3Date)}.</p>
+                </button>
+                {/* Installments option */}
+                <button
+                  onClick={() => setPlanChoiceSelection('installments')}
+                  className="w-full text-left p-4 rounded-xl border-2 transition-all relative"
+                  style={{ borderColor: planChoiceSelection === 'installments' ? '#2d1a0e' : '#e0d5cc', backgroundColor: planChoiceSelection === 'installments' ? '#f5f0eb' : 'white' }}
+                >
+                  {isHighValue && <span className="absolute top-3 right-3 text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>Recommended for large orders</span>}
+                  <p className="font-semibold text-sm mb-1" style={{ color: '#2d1a0e' }}>Pay in 3 installments</p>
+                  <p className="text-xs" style={{ color: '#5c3d2e' }}>Pay <strong>${p1}</strong> today, <strong>${p2}</strong> on {fmtDate(midDate)}, <strong>${p3}</strong> on {fmtDate(p3Date)} (3 days before event).</p>
+                </button>
+              </div>
+              <button
+                onClick={submitPlanChoice}
+                disabled={submittingPlanChoice}
+                className="w-full py-3 rounded-xl text-white text-sm font-semibold"
+                style={{ backgroundColor: '#2d1a0e', opacity: submittingPlanChoice ? 0.6 : 1 }}
+              >{submittingPlanChoice ? 'Saving…' : 'Confirm and Pay Deposit'}</button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Size Reduction Request Modal */}
+      {sizeReductionOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Request Size Reduction</h3>
+            <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>
+              Current order: <strong>{sizeReductionOrder.servings} servings</strong> — {sizeReductionOrder.event_type}
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Requested serving count</label>
+              <input
+                type="number"
+                min={1}
+                max={(parseInt(sizeReductionOrder.servings) || 1) - 1}
+                value={sizeReductionServings}
+                onChange={e => setSizeReductionServings(e.target.value)}
+                placeholder="Enter new serving count"
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }}
+              />
+              {sizeReductionServings && parseInt(sizeReductionServings) >= (parseInt(sizeReductionOrder.servings) || 1) && (
+                <p className="text-xs mt-1" style={{ color: '#dc2626' }}>Must be less than current serving count ({sizeReductionOrder.servings})</p>
+              )}
+            </div>
+            {sizeReductionServings && parseInt(sizeReductionServings) > 0 && parseInt(sizeReductionServings) < (parseInt(sizeReductionOrder.servings) || 1) && (
+              <div className="rounded-lg p-3 mb-4 text-sm" style={{ backgroundColor: '#faf8f6', borderLeft: '3px solid #8B4513' }}>
+                <div style={{ color: '#5c3d2e' }}>Your baker will review your request and confirm the adjusted price if approved.</div>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setSizeReductionOrder(null); setSizeReductionServings('') }}
+                className="flex-1 py-2 rounded-lg text-sm font-semibold border"
+                style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}
+              >Cancel</button>
+              <button
+                onClick={submitSizeReduction}
+                disabled={
+                  submittingSizeReduction ||
+                  !sizeReductionServings ||
+                  parseInt(sizeReductionServings) <= 0 ||
+                  parseInt(sizeReductionServings) >= (parseInt(sizeReductionOrder.servings) || 1)
+                }
+                className="flex-1 py-2 rounded-lg text-sm font-semibold text-white"
+                style={{ backgroundColor: '#5c3d2e', opacity: submittingSizeReduction ? 0.6 : 1 }}
+              >{submittingSizeReduction ? 'Submitting…' : 'Submit Request'}</button>
             </div>
           </div>
         </div>
@@ -852,6 +1123,45 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
           </div>
         )}
 
+        {(() => {
+          const attentionItems: { orderId: string; label: string; name: string; eventType: string; eventDate: string }[] = []
+          for (const o of orders) {
+            if (o.status === 'confirmed' && !o.deposit_paid_at)
+              attentionItems.push({ orderId: o.id, label: 'Deposit required', name: o.bakers?.business_name || '', eventType: o.event_type, eventDate: o.event_date })
+            if (o.status === 'ready' && o.fulfillment_type === 'pickup')
+              attentionItems.push({ orderId: o.id, label: 'Ready for pickup', name: o.bakers?.business_name || '', eventType: o.event_type, eventDate: o.event_date })
+            if (o.counter_status === 'pending')
+              attentionItems.push({ orderId: o.id, label: 'Counter offer to review', name: o.bakers?.business_name || '', eventType: o.event_type, eventDate: o.event_date })
+            if (o.size_reduction_status === 'approved')
+              attentionItems.push({ orderId: o.id, label: 'Size reduction approved — review new price', name: o.bakers?.business_name || '', eventType: o.event_type, eventDate: o.event_date })
+          }
+          if (attentionItems.length === 0) return null
+          return (
+            <div className="mb-6 rounded-2xl overflow-hidden shadow-sm" style={{ border: '2px solid #dc2626' }}>
+              <button onClick={() => setNeedsAttentionCollapsed(v => !v)} className="w-full flex items-center justify-between px-5 py-3" style={{ backgroundColor: '#fef2f2' }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold" style={{ color: '#991b1b' }}>Needs Attention</span>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold text-white" style={{ backgroundColor: '#dc2626' }}>{attentionItems.length}</span>
+                </div>
+                <span className="text-xs" style={{ color: '#991b1b' }}>{needsAttentionCollapsed ? '▼' : '▲'}</span>
+              </button>
+              {!needsAttentionCollapsed && (
+                <div className="flex flex-col divide-y" style={{ backgroundColor: 'white', borderColor: '#fee2e2' }}>
+                  {attentionItems.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between px-5 py-3 gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold" style={{ color: '#991b1b' }}>{item.label}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{item.name} · {item.eventType} · {item.eventDate}</p>
+                      </div>
+                      <button onClick={() => { setActiveTab('orders'); document.getElementById('order-' + item.orderId)?.scrollIntoView({ behavior: 'smooth' }) }} className="flex-shrink-0 px-4 py-2 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: '#dc2626' }}>View Order</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
         <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6 md:mb-8">
           {[['Pending', pending.length], ['Confirmed', confirmed.length], ['Saved Bakers', savedBakers.length]].map(([label, count]) => (
             <div key={label as string} className="bg-white rounded-2xl p-5 shadow-sm text-center">
@@ -894,12 +1204,12 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                 <p className="text-sm mb-6" style={{ color: '#5c3d2e' }}>Find a baker and start your first order!</p>
                 <Link href="/bakers" className="px-6 py-3 rounded-xl text-white font-semibold text-sm inline-block" style={{ backgroundColor: '#2d1a0e' }}>Browse Bakers</Link>
               </div>
-            ) : orders.map(order => {
+            ) : sortOrders(orders).map(order => {
               const daysUntil = getDaysUntil(order.event_date)
-              const progressStep = getProgressStep(order.status)
-              const steps = ['Request Sent', 'Baker Accepted', 'In Progress', 'Ready', 'Complete']
+              const progressStep = getProgressStep(order)
+              const steps = ['Request Sent', 'Baker Accepted', 'Awaiting Deposit', 'In Progress', 'Ready', 'Complete']
               return (
-                <div key={order.id} className="bg-white rounded-2xl p-6 shadow-sm">
+                <div key={order.id} id={'order-' + order.id} className="bg-white rounded-2xl p-6 shadow-sm">
                   <div className="flex items-start justify-between gap-4 mb-5">
                     <div className="flex items-center gap-4">
                       <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
@@ -960,11 +1270,11 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
 
                   {/* Deposit payment prompt */}
                   {needsDeposit(order) && (
-                    <div className="mb-4 rounded-xl p-4 flex items-center justify-between gap-4" style={{ backgroundColor: '#fef9c3', border: '1px solid #fde68a' }}>
+                    <div className="mb-2 rounded-xl p-4 flex items-center justify-between gap-4" style={{ backgroundColor: '#fef9c3', border: '1px solid #fde68a' }}>
                       <div>
                         <p className="text-sm font-bold" style={{ color: '#854d0e' }}>Deposit required to confirm your order</p>
                         <p className="text-xs mt-0.5" style={{ color: '#92400e' }}>
-                          Pay 50% now (${(order.budget / 2).toFixed(2)}) — remainder due 48hrs before your event.
+                          Pay {order.budget >= 750 ? '60' : '50'}% now (${((order.budget * (order.budget >= 750 ? 0.60 : 0.50))).toFixed(2)}) — remainder due 3 days before your event.
                         </p>
                       </div>
                       <button onClick={() => payDeposit(order)}
@@ -974,6 +1284,11 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                       </button>
                     </div>
                   )}
+                  {needsDeposit(order) && (
+                    <p className="text-xs leading-relaxed mb-4" style={{ color: '#9c7b6b' }}>
+                      Heads up on cancellations: If you cancel more than 7 days before your event, your deposit is non-refundable but the remaining balance won't be charged. If you cancel within 7 days, the full order may be charged. Full details in our <a href="/terms" className="underline">Terms of Service</a>.
+                    </p>
+                  )}
 
                   {/* Deposit paid confirmation */}
                   {order.deposit_paid_at && !order.remainder_paid_at && (
@@ -981,7 +1296,7 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                       <div>
                         <p className="text-xs font-semibold" style={{ color: '#166534' }}>✓ Deposit paid</p>
                         <p className="text-xs mt-0.5" style={{ color: '#166534' }}>
-                          Remaining balance of ${order.amount_remainder ? (order.amount_remainder / 100).toFixed(2) : (order.budget / 2).toFixed(2)} due 48hrs before your event.
+                          Remaining balance of ${order.amount_remainder ? (order.amount_remainder / 100).toFixed(2) : (order.budget / 2).toFixed(2)} due 3 days before your event.
                         </p>
                       </div>
                       {needsRemainder(order) && (
@@ -1132,14 +1447,20 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                     </div>
                   )}
 
-                  {order.status === 'complete' && !order.tip_amount && !dismissedTips.includes(order.id) && (
+                  {order.status === 'complete' && order.tip_paid_at && (
+                    <div className="mb-4 rounded-xl px-4 py-3 flex items-center gap-3" style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                      <span className="text-xs font-semibold" style={{ color: '#166534' }}>Tip sent ✓ — ${(order.tip_amount / 100).toFixed(2)} to {order.bakers?.business_name}</span>
+                    </div>
+                  )}
+
+                  {order.status === 'complete' && !order.tip_paid_at && !order.tip_amount && !dismissedTips.includes(order.id) && (
                     <div className="mb-4 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ backgroundColor: '#f5f0eb', border: '1px solid #e0d5cc' }}>
                       <div>
                         <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>Leave a tip?</p>
                         <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Tips go 100% to {order.bakers?.business_name}. Whiskly takes nothing.</p>
                       </div>
                       <div className="flex gap-2 flex-shrink-0">
-                        <button onClick={() => { setTipOrder(order); setTipSelection('15'); setTipCustomAmount('') }} className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Tip</button>
+                        <button onClick={() => { setTipOrder(order); setTipSuccess(false); setTipError(null); setTipSelection('15'); setTipCustomAmount('') }} className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Tip</button>
                         <button onClick={() => dismissTip(order.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>No thanks</button>
                       </div>
                     </div>
@@ -1172,6 +1493,30 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                     )}
                     {(order.status === 'pending' || order.status === 'confirmed') && !order.is_disputed && (
                       <button onClick={() => { setCancelOrder(order); setCancelReason(''); setCancelDescription('') }} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Cancel Order</button>
+                    )}
+                    {/* Size reduction button */}
+                    {['confirmed', 'in_progress'].includes(order.status) && !order.size_reduction_requested && !order.remainder_paid_at && (() => {
+                      const daysUntil = getDaysUntil(order.event_date)
+                      if (daysUntil < 0) return null
+                      return (
+                        <button
+                          onClick={() => { if (daysUntil > 7) { setSizeReductionOrder(order); setSizeReductionServings('') } }}
+                          disabled={daysUntil <= 7}
+                          title={daysUntil <= 7 ? 'Size reductions are not available within 7 days of your event. Contact your baker directly.' : undefined}
+                          className="px-4 py-2 rounded-lg text-xs font-semibold border"
+                          style={{ borderColor: daysUntil <= 7 ? '#e0d5cc' : '#5c3d2e', color: daysUntil <= 7 ? '#9c7b6b' : '#5c3d2e', opacity: daysUntil <= 7 ? 0.6 : 1 }}>
+                          Request Size Reduction
+                        </button>
+                      )
+                    })()}
+                    {order.size_reduction_requested && order.size_reduction_status === 'pending' && (
+                      <span className="px-4 py-2 rounded-lg text-xs font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Size reduction requested — awaiting baker response</span>
+                    )}
+                    {order.size_reduction_status === 'approved' && (
+                      <span className="px-4 py-2 rounded-lg text-xs font-semibold" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>✓ Size reduction approved — new price confirmed by baker</span>
+                    )}
+                    {order.size_reduction_status === 'declined' && (
+                      <span className="px-4 py-2 rounded-lg text-xs font-semibold" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>Size reduction request was declined — original order stands</span>
                     )}
                     {order.deposit_paid_at && ['confirmed','in_progress','ready','complete'].includes(order.status) && !order.is_disputed && (
                       <button onClick={() => { setDisputeOrder(order); setDisputeReason(''); setDisputeDescription('') }} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#92400e', color: '#92400e' }}>File Dispute</button>
@@ -1263,6 +1608,15 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                       })}
                       <div ref={messagesEndRef} />
                     </div>
+                    {offPlatformWarning && (
+                      <div className="px-5 pt-3 pb-0">
+                        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl border text-xs" style={{ borderColor: '#fbbf24', backgroundColor: '#fffbeb', color: '#92400e' }}>
+                          <span className="flex-shrink-0 mt-0.5">⚠</span>
+                          <span className="flex-1">Your message may contain {offPlatformWarning}. For your protection, please keep all communication and payments on Whiskly.</span>
+                          <button onClick={() => setOffPlatformWarning(null)} className="flex-shrink-0 font-bold ml-1" style={{ color: '#92400e' }}>✕</button>
+                        </div>
+                      </div>
+                    )}
                     <div className="px-5 py-4 border-t flex gap-3 items-end" style={{ borderColor: '#e0d5cc' }}>
                       <textarea value={newMessage} onChange={e => setNewMessage(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
@@ -1340,6 +1694,18 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
 
         {activeTab === 'account' && (
           <div className="flex flex-col gap-6 max-w-lg">
+            {customer?.is_trusted_member && (
+              <div className="rounded-2xl p-5 flex items-start gap-4" style={{ backgroundColor: '#1e3a5f', color: 'white' }}>
+                <div className="text-3xl flex-shrink-0">🛡️</div>
+                <div>
+                  <p className="font-bold text-base">Trusted Member</p>
+                  <p className="text-sm mt-0.5 opacity-90">You've earned the Trusted Member badge — awarded to customers with a strong order history and excellent standing.</p>
+                  {customer?.trusted_member_since && (
+                    <p className="text-xs mt-2 opacity-70">Member since {new Date(customer.trusted_member_since).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               <h2 className="text-lg font-bold mb-6" style={{ color: '#2d1a0e' }}>Account Info</h2>
               <div className="flex flex-col gap-4">
@@ -1349,8 +1715,34 @@ await supabase.from('messages').insert({ sender_id: currentUserId, receiver_id: 
                     <p className="px-4 py-3 rounded-lg border text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}>{val || '—'}</p>
                   </div>
                 ))}
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Phone Number</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="tel"
+                      value={phoneValue}
+                      onChange={e => { setPhoneValue(e.target.value); setPhoneSaved(false) }}
+                      placeholder="e.g. (555) 123-4567"
+                      className="flex-1 px-4 py-3 rounded-lg border text-sm"
+                      style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!customer) return
+                        setSavingPhone(true)
+                        await supabase.from('customers').update({ phone: phoneValue }).eq('id', customer.id)
+                        setSavingPhone(false)
+                        setPhoneSaved(true)
+                        setTimeout(() => setPhoneSaved(false), 3000)
+                      }}
+                      disabled={savingPhone}
+                      className="px-4 py-3 rounded-lg text-sm font-semibold text-white flex-shrink-0"
+                      style={{ backgroundColor: '#2d1a0e', opacity: savingPhone ? 0.6 : 1 }}
+                    >{savingPhone ? 'Saving...' : phoneSaved ? 'Saved ✓' : 'Save'}</button>
+                  </div>
+                </div>
                 <div className="pt-2 flex items-center justify-between">
-  <p className="text-xs" style={{ color: '#5c3d2e' }}>Want to sell on Whiskly? <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>Join as a Baker</Link></p>
+  <p className="text-xs" style={{ color: '#5c3d2e' }}>Want to sell on Whiskly? <Link href="/join" className="font-semibold underline" style={{ color: '#2d1a0e' }}>Apply as a Baker</Link></p>
   <div className="flex gap-2">
     <Link href="/account/settings" className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Account Settings</Link>
     <button onClick={handleSignOut} className="px-4 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Sign Out</button>

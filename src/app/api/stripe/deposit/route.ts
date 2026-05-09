@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
     const { data: order } = await supabase
       .from('orders')
-      .select('*, bakers(id, stripe_account_id, is_pro)')
+      .select('*, bakers(id, stripe_account_id, tier)')
       .eq('id', order_id)
       .maybeSingle()
 
@@ -26,38 +26,47 @@ export async function POST(req: NextRequest) {
     if (!order.budget) return NextResponse.json({ error: 'Order has no budget set' }, { status: 400 })
 
     const totalCents = Math.round(order.budget * 100)
-    const depositCents = Math.round(totalCents * 0.5)
-    const commissionRate = order.bakers?.is_pro ? PRO_COMMISSION : FREE_COMMISSION
+    // Payment plan: Payment 1 = 33% of total
+    // High-value ($750+, no payment plan): 60% deposit
+    // Standard: 50% deposit
+    const depositRate = order.payment_plan ? 0.33 : order.budget >= 750 ? 0.60 : 0.50
+    const depositCents = Math.round(totalCents * depositRate)
+    const commissionRate = order.bakers?.tier === 'pro' ? PRO_COMMISSION : FREE_COMMISSION
     const depositCommissionCents = Math.round(depositCents * commissionRate)
-    // 3% platform fee passed to customer
-    const platformFeeCents = Math.round(depositCents * 0.03)
-    const customerDepositCents = depositCents + platformFeeCents
+    const customerDepositCents = depositCents + 299
 
     // TODO: When baker Stripe Connect onboarding is built, re-add transfer_data:
     // transfer_data: { destination: order.bakers.stripe_account_id, amount: depositCents - depositCommissionCents }
     const paymentIntent = await stripe.paymentIntents.create({
       amount: customerDepositCents,
       currency: 'usd',
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ['card'],
+      setup_future_usage: 'off_session',
       metadata: {
         order_id,
         type: 'deposit',
         whiskly_commission: depositCommissionCents.toString(),
+        platform_fee: '299',
       },
       description: 'Whiskly deposit — Order ' + order_id.slice(0, 8) + ' — ' + (order.event_type || 'Custom Order'),
     })
 
-    await supabase.from('orders').update({
+    // For payment plan orders, store Payment 2 amount (33%) for cron use
+    const payment2Cents = order.payment_plan ? Math.round(totalCents * 0.33) : null
+    const orderUpdates: any = {
       deposit_payment_intent_id: paymentIntent.id,
       amount_total: totalCents,
       amount_deposit: depositCents,
       amount_remainder: totalCents - depositCents,
-    }).eq('id', order_id)
+    }
+    if (order.payment_plan && payment2Cents) {
+      orderUpdates.payment_plan_payment2_amount = payment2Cents
+    }
+    await supabase.from('orders').update(orderUpdates).eq('id', order_id)
 
     return NextResponse.json({
       client_secret: paymentIntent.client_secret,
       deposit_amount: depositCents,
-      platform_fee: platformFeeCents,
       customer_total: customerDepositCents,
       total_amount: totalCents,
     })

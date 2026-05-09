@@ -150,7 +150,7 @@ export function PaymentModal({ orderId, type, amount, eventType, bakerName, onCl
             </div>
             {type === 'deposit' && (
               <p className="text-xs mt-2" style={{ color: '#8B4513' }}>
-                Remaining balance due 48 hours before your event.
+                Remaining balance due 3 days before your event.
               </p>
             )}
           </div>

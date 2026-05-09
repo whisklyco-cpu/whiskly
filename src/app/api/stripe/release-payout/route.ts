@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
     const { data: order } = await supabase
       .from('orders')
-      .select('*, bakers(id, stripe_account_id, is_pro, baker_reserve_balance)')
+      .select('*, bakers(id, stripe_account_id, tier, baker_reserve_balance)')
       .eq('id', order_id)
       .maybeSingle()
 
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     if (!order.bakers?.stripe_account_id) return NextResponse.json({ error: 'Baker has not connected Stripe' }, { status: 400 })
 
     const totalCents = order.amount_total || Math.round((order.budget || 0) * 100)
-    const commissionRate = order.bakers.is_pro ? PRO_COMMISSION : FREE_COMMISSION
+    const commissionRate = order.bakers.tier === 'pro' ? PRO_COMMISSION : FREE_COMMISSION
     const commissionCents = Math.round(totalCents * commissionRate)
     const reserveCents = Math.round(totalCents * RESERVE_RATE)
     const payoutCents = totalCents - commissionCents - reserveCents

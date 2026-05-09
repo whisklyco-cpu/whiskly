@@ -425,7 +425,7 @@ export async function POST(req: Request) {
             ${ctaButton('View My Order', `${BASE_URL}/dashboard/customer`)}
           </div>
           <p style="color: #9c7b6b; font-size: 12px; margin-top: 20px;">
-            The remaining balance will be due 48 hours before your event date. You'll receive a reminder email when it's time to pay.
+            The remaining balance will be due 3 days before your event date. You'll receive a reminder email when it's time to pay.
           </p>
         `)
       })

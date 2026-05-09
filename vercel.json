@@ -11,6 +11,13 @@
     { "path": "/api/cron/review-requests", "schedule": "0 10 * * *" },
     { "path": "/api/cron/important-dates-reminder", "schedule": "0 9 * * *" },
     { "path": "/api/cron/baker-performance", "schedule": "0 8 * * 1" },
-    { "path": "/api/cron/content-reminder", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/content-reminder", "schedule": "0 8 * * *" },
+    { "path": "/api/crons/ingredient-advance", "schedule": "0 10 * * *" },
+{ "path": "/api/crons/release-final-payout", "schedule": "0 12 * * *" },
+    { "path": "/api/crons/check-instant-payout-eligibility", "schedule": "0 9 * * *" },
+    { "path": "/api/crons/quarterly-reserve-release", "schedule": "0 10 1 */3 *" },
+    { "path": "/api/cron/evidence-deadline", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/payment-plan-charge", "schedule": "0 11 * * *" },
+    { "path": "/api/cron/badge-check", "schedule": "0 8 * * *" }
   ]
 }

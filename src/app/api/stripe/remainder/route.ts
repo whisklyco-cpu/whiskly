@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
     const { data: order } = await supabase
       .from('orders')
-      .select('*, bakers(id, stripe_account_id, is_pro)')
+      .select('*, bakers(id, stripe_account_id, tier)')
       .eq('id', order_id)
       .maybeSingle()
 
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     if (order.remainder_paid_at) return NextResponse.json({ error: 'Remainder already paid' }, { status: 400 })
 
   const remainderCents = order.amount_remainder
-const commissionRate = order.bakers.is_pro ? PRO_COMMISSION : FREE_COMMISSION
+const commissionRate = order.bakers.tier === 'pro' ? PRO_COMMISSION : FREE_COMMISSION
 const remainderCommissionCents = Math.round(remainderCents * commissionRate)
 const bakerRemainderCents = remainderCents - remainderCommissionCents
 const platformFeeCents = Math.round(remainderCents * 0.03)
@@ -36,7 +36,7 @@ const customerRemainderCents = remainderCents + platformFeeCents
     const paymentIntent = await stripe.paymentIntents.create({
   amount: customerRemainderCents,
       currency: 'usd',
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ['card'],
       transfer_data: {
         destination: order.bakers.stripe_account_id,
         amount: bakerRemainderCents,

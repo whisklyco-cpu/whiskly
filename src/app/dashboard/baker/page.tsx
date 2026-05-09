@@ -41,6 +41,18 @@ export default function BakerDashboard() {
   const [emergencyWindows, setEmergencyWindows] = useState<string[]>([])
   const [payouts, setPayouts] = useState<any[]>([])
   const [togglingInstantPayout, setTogglingInstantPayout] = useState(false)
+  const [reserveData, setReserveData] = useState<any>(null)
+  const [reserveTxs, setReserveTxs] = useState<any[]>([])
+  const [pendingTranches, setPendingTranches] = useState<any[]>([])
+  const [recentDisputeCount, setRecentDisputeCount] = useState(0)
+  const [showPlanModal, setShowPlanModal] = useState(false)
+  const [proBakerCount, setProBakerCount] = useState(0)
+  const [dismissedTouch2, setDismissedTouch2] = useState(false)
+  const [dismissedTouch3, setDismissedTouch3] = useState(false)
+  const [copiedStripeUrl, setCopiedStripeUrl] = useState(false)
+  const [openTipIdx, setOpenTipIdx] = useState<number | null>(null)
+  const [paymentPlansEnabled, setPaymentPlansEnabled] = useState(false)
+  const [needsAttentionCollapsed, setNeedsAttentionCollapsed] = useState(false)
 
   // Planned vacations
   const [plannedVacations, setPlannedVacations] = useState<any[]>([])
@@ -79,10 +91,59 @@ export default function BakerDashboard() {
     return () => { supabase.removeChannel(orderChannel); supabase.removeChannel(msgChannel) }
   }, [baker])
 
+  // Auto-update profile_complete when all six checklist items are met
+  useEffect(() => {
+    if (!baker || loading) return
+    const allComplete =
+      !!baker.profile_photo_url &&
+      portfolio.length >= 3 &&
+      !!(baker.starting_price && baker.starting_price > 0) &&
+      !!(baker.bio && baker.bio.trim().length > 0) &&
+      !!baker.tier &&
+      !!baker.stripe_account_id
+    if (allComplete && !baker.profile_complete) {
+      supabase.from('bakers').update({ profile_complete: true }).eq('id', baker.id).then(() => {})
+      setBaker((prev: any) => ({ ...prev, profile_complete: true }))
+    }
+  }, [baker?.profile_photo_url, portfolio.length, baker?.starting_price, baker?.bio, baker?.tier, baker?.stripe_account_id, baker?.profile_complete, loading])
+
+  async function handlePlanSelection(plan: 'free' | 'pro') {
+    const updates: any = { has_seen_plan_modal: true }
+    if (plan === 'free') updates.tier = 'free'
+    await supabase.from('bakers').update(updates).eq('id', baker.id)
+    setBaker((prev: any) => ({ ...prev, ...updates }))
+    setShowPlanModal(false)
+    if (plan === 'pro') window.location.href = '/join?plan=pro'
+  }
+
+  function dismissTouch2Banner() {
+    localStorage.setItem('whiskly_touch2_' + baker.id, '1')
+    setDismissedTouch2(true)
+  }
+
+  function dismissTouch3Banner() {
+    localStorage.setItem('whiskly_touch3_' + baker.id, '1')
+    setDismissedTouch3(true)
+  }
+
+  function copyStripeUrl() {
+    navigator.clipboard.writeText('https://www.whiskly.co/bakers/' + baker.id)
+    setCopiedStripeUrl(true)
+    setTimeout(() => setCopiedStripeUrl(false), 2000)
+  }
+
   async function loadDashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
     const { data: bakerData } = await supabase.from('bakers').select('*').eq('user_id', user.id).maybeSingle()
+    if (bakerData && !bakerData.is_active) {
+      router.push('/application-pending')
+      return
+    }
+    if (bakerData && !bakerData.onboarding_completed) {
+      router.push('/onboarding/baker')
+      return
+    }
     if (bakerData) {
       setBaker(bakerData)
       setBusinessName(bakerData.business_name || '')
@@ -99,15 +160,38 @@ export default function BakerDashboard() {
       setIsEmergencyPause(bakerData.is_emergency_pause || false)
       setIsEmergencyRoster(bakerData.emergency_roster || false)
       setEmergencyWindows(bakerData.emergency_windows || [])
+      setPaymentPlansEnabled(bakerData.payment_plans_enabled || false)
       const { data: ordersData } = await supabase.from('orders').select('*, inspiration_photo_urls').eq('baker_id', bakerData.id).order('created_at', { ascending: false })
       setOrders((ordersData || []).map(o => ({ ...o, inspiration_photo_urls: o.inspiration_photo_urls || [] })))
       const { data: portfolioData } = await supabase.from('portfolio_items').select('*').eq('baker_id', bakerData.id).order('created_at', { ascending: false })
       setPortfolio(portfolioData || [])
       const { data: unreadData } = await supabase.from('messages').select('id').eq('receiver_id', user.id).is('read_at', null)
       setUnreadCount((unreadData || []).length)
-      // Fetch payout history
+      // Fetch payout history (legacy payout_schedule)
       const { data: payoutData } = await supabase.from('payout_schedule').select('*').eq('baker_id', bakerData.id).order('created_at', { ascending: false }).limit(10)
       setPayouts(payoutData || [])
+      // Fetch reserve data
+      const disputeCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+      const [reserveRes, reserveTxRes, tranchesRes, disputeRes] = await Promise.all([
+        supabase.from('baker_reserve').select('*').eq('baker_id', bakerData.id).maybeSingle(),
+        supabase.from('reserve_transactions').select('*').eq('baker_id', bakerData.id).order('created_at', { ascending: false }).limit(10),
+        supabase.from('payout_tranches').select('*').eq('baker_id', bakerData.id).in('status', ['pending', 'scheduled']).order('created_at', { ascending: false }),
+        supabase.from('orders').select('id').eq('baker_id', bakerData.id).eq('is_disputed', true).eq('auto_resolved', false).gte('dispute_filed_at', disputeCutoff),
+      ])
+      setReserveData(reserveRes.data)
+      setReserveTxs(reserveTxRes.data || [])
+      setPendingTranches(tranchesRes.data || [])
+      setRecentDisputeCount((disputeRes.data || []).length)
+      // Pro baker count — used for plan modal and upgrade banners
+      const { count: proCount } = await supabase.from('bakers').select('*', { count: 'exact', head: true }).eq('tier', 'pro').eq('is_active', true)
+      setProBakerCount(proCount || 0)
+      // Show plan selection modal on first login after approval
+      if (bakerData.has_seen_plan_modal === false) setShowPlanModal(true)
+      // Load banner dismissal state from localStorage
+      if (typeof window !== 'undefined') {
+        setDismissedTouch2(localStorage.getItem('whiskly_touch2_' + bakerData.id) === '1')
+        setDismissedTouch3(localStorage.getItem('whiskly_touch3_' + bakerData.id) === '1')
+      }
       // Fetch planned vacations
       const { data: vacData } = await supabase.from('baker_vacations').select('*').eq('baker_id', bakerData.id).order('start_date', { ascending: true })
       setPlannedVacations(vacData || [])
@@ -245,14 +329,22 @@ export default function BakerDashboard() {
     }
   }
 
-  async function updateOrderStatus(orderId: string, status: string) {
-    await supabase.from('orders').update({ status }).eq('id', orderId)
-    setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o))
+  async function updateOrderStatus(orderId: string, status: string, confirmedPriceCents?: number) {
+    const updates: any = { status }
+    if (status === 'confirmed' && confirmedPriceCents !== undefined) {
+      updates.confirmed_price = confirmedPriceCents
+    }
+    await supabase.from('orders').update(updates).eq('id', orderId)
+    setOrders(orders.map(o => o.id === orderId ? { ...o, status, ...(confirmedPriceCents !== undefined ? { confirmed_price: confirmedPriceCents } : {}) } : o))
     if (status === 'confirmed') {
       const order = orders.find(o => o.id === orderId)
       if (order) {
-        fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'deposit_nudge', customerEmail: order.customer_email, customerName: order.customer_name, bakerName: baker.business_name, eventType: order.event_type, eventDate: order.event_date, budget: order.budget, orderId }) }).catch(() => {})
-        fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'order_accepted', customerEmail: order.customer_email, customerName: order.customer_name, bakerName: baker.business_name, eventType: order.event_type, eventDate: order.event_date, budget: order.budget, orderId }) }).catch(() => {})
+        const displayPrice = confirmedPriceCents !== undefined ? confirmedPriceCents / 100 : order.budget
+        const savedAmount = confirmedPriceCents !== undefined && confirmedPriceCents / 100 < order.budget
+          ? (order.budget - confirmedPriceCents / 100).toFixed(2) : null
+        const acceptedBody = `Your order has been confirmed at $${displayPrice.toFixed(2)}.${savedAmount ? ` You saved $${savedAmount} compared to your original budget.` : ''} Please log in to your dashboard to pay your deposit and lock in your order.`
+        fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'announcement', to: order.customer_email, name: order.customer_name, subject: 'Your Whiskly order has been confirmed!', body: acceptedBody }) }).catch(() => {})
+        fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'deposit_nudge', customerEmail: order.customer_email, customerName: order.customer_name, bakerName: baker.business_name, eventType: order.event_type, eventDate: order.event_date, budget: displayPrice, orderId }) }).catch(() => {})
       }
     }
     if (status === 'declined') {
@@ -387,11 +479,83 @@ async function triggerEmergencyPause() {
   alert('Emergency pause activated. Our team has been notified and will be in touch shortly.')
 }
 
+  const STATUS_ORDER: Record<string, number> = { in_progress: 0, confirmed: 1, ready: 2, pending: 3, countered: 4, complete: 5, declined: 6, cancelled: 7 }
+  function sortOrders(list: any[]) {
+    return [...list].sort((a, b) => {
+      const ap = STATUS_ORDER[a.status] ?? 8, bp = STATUS_ORDER[b.status] ?? 8
+      if (ap !== bp) return ap - bp
+      if (a.event_date && b.event_date) return a.event_date.localeCompare(b.event_date)
+      return a.event_date ? -1 : b.event_date ? 1 : 0
+    })
+  }
+
   const pending = orders.filter(o => o.status === 'pending')
   const countered = orders.filter(o => o.status === 'countered')
   const confirmed = orders.filter(o => o.status === 'confirmed')
   const inProgress = orders.filter(o => o.status === 'in_progress')
   const maxPhotos = baker?.tier === 'pro' ? 10 : 3
+
+  function SizeReductionBakerCard({ order, baker, setOrders }: { order: any; baker: any; setOrders: any }) {
+    const [confirmedPrice, setConfirmedPrice] = useState('')
+    const [responding, setResponding] = useState(false)
+
+    async function approve() {
+      if (!confirmedPrice || isNaN(parseFloat(confirmedPrice))) return
+      setResponding(true)
+      const newTotal = parseFloat(confirmedPrice)
+      await supabase.from('orders').update({
+        size_reduction_status: 'approved',
+        budget: newTotal,
+      }).eq('id', order.id)
+      const { data: customerData } = await supabase.from('customers').select('user_id').eq('email', order.customer_email).maybeSingle()
+      await supabase.from('messages').insert({
+        sender_id: baker.user_id,
+        receiver_id: customerData?.user_id || null,
+        baker_id: baker.id,
+        order_id: order.id,
+        content: 'Your size reduction request has been approved. The new confirmed price for your order is $' + newTotal.toFixed(2) + '.',
+      })
+      fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'announcement', to: order.customer_email, name: order.customer_name, subject: 'Your size reduction has been approved — Whiskly', body: 'Great news! Your baker has approved your size reduction request. The new confirmed price for your order is $' + newTotal.toFixed(2) + '. Your balance payment will be adjusted accordingly.' }) }).catch(() => {})
+      setOrders((prev: any[]) => prev.map(o => o.id === order.id ? { ...o, size_reduction_status: 'approved', budget: newTotal } : o))
+      setResponding(false)
+    }
+
+    async function decline() {
+      setResponding(true)
+      await supabase.from('orders').update({ size_reduction_status: 'declined' }).eq('id', order.id)
+      const { data: customerData } = await supabase.from('customers').select('user_id').eq('email', order.customer_email).maybeSingle()
+      await supabase.from('messages').insert({
+        sender_id: baker.user_id,
+        receiver_id: customerData?.user_id || null,
+        baker_id: baker.id,
+        order_id: order.id,
+        content: 'Your size reduction request has been declined. Your original order and price remain in place.',
+      })
+      fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'announcement', to: order.customer_email, name: order.customer_name, subject: 'Your size reduction request was declined — Whiskly', body: 'Your baker has reviewed your size reduction request and is unable to accommodate it at this time. Your original order details and price remain unchanged.' }) }).catch(() => {})
+      setOrders((prev: any[]) => prev.map(o => o.id === order.id ? { ...o, size_reduction_status: 'declined' } : o))
+      setResponding(false)
+    }
+
+    return (
+      <div className="p-3 rounded-xl border-2" style={{ borderColor: '#f59e0b', backgroundColor: '#fffbeb' }}>
+        <p className="text-xs font-bold mb-1" style={{ color: '#92400e' }}>Size reduction requested</p>
+        <p className="text-xs mb-2" style={{ color: '#78350f' }}>
+          {order.customer_name} is requesting a reduction from {order.size_reduction_original_servings} to {order.size_reduction_requested_servings} servings.
+        </p>
+        <p className="text-xs mb-2" style={{ color: '#5c3d2e' }}>Enter the new confirmed price to approve, or decline to keep the original order.</p>
+        <div className="flex gap-2 items-center mb-2">
+          <span className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>$</span>
+          <input type="number" value={confirmedPrice} onChange={e => setConfirmedPrice(e.target.value)}
+            placeholder="New confirmed price" className="flex-1 px-3 py-1.5 rounded-lg border text-xs"
+            style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: 'white' }} />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={decline} disabled={responding} className="flex-1 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#dc2626', color: '#dc2626' }}>Decline</button>
+          <button onClick={approve} disabled={responding || !confirmedPrice} className="flex-1 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166534', opacity: (!confirmedPrice || responding) ? 0.5 : 1 }}>Approve with $</button>
+        </div>
+      </div>
+    )
+  }
 
   function OrderCard({ order }: { order: any }) {
     const [expanded, setExpanded] = useState(false)
@@ -402,6 +566,11 @@ async function triggerEmergencyPause() {
     const [localCounterPrice, setLocalCounterPrice] = useState('')
     const [localCounterMessage, setLocalCounterMessage] = useState('')
     const [localCounterSending, setLocalCounterSending] = useState(false)
+    // Set Price modal (shown before accept modal)
+    const [showPriceModal, setShowPriceModal] = useState(false)
+    const [confirmedPrice, setConfirmedPrice] = useState('')
+    const [aiPricing, setAiPricing] = useState<{ low: number; high: number; reasoning: string } | null>(null)
+    const [aiPricingLoading, setAiPricingLoading] = useState(false)
     // Accept confirmation modal
     const [showAcceptModal, setShowAcceptModal] = useState(false)
     // Cancel modal
@@ -423,7 +592,11 @@ async function triggerEmergencyPause() {
     // Customer rating display (shown when expanded)
     const [customerAvgRating, setCustomerAvgRating] = useState<number | null>(null)
     const [customerRatingCount, setCustomerRatingCount] = useState(0)
+    const [customerIsTrusted, setCustomerIsTrusted] = useState(false)
     const [loadedCustomerRating, setLoadedCustomerRating] = useState(false)
+    // High-value pre-acceptance review
+    const [showHighValueReview, setShowHighValueReview] = useState(false)
+    const [highValueScopeConfirmed, setHighValueScopeConfirmed] = useState(false)
     // Three-dots menu / Block / Flag
     const [showDotsMenu, setShowDotsMenu] = useState(false)
     const [showBlockModal, setShowBlockModal] = useState(false)
@@ -460,12 +633,39 @@ async function triggerEmergencyPause() {
 
     useEffect(() => {
       if (expanded && !loadedCustomerRating) {
-        supabase.from('customers').select('avg_rating, rating_count').eq('email', order.customer_email).maybeSingle().then(({ data }) => {
-          if (data) { setCustomerAvgRating(data.avg_rating || null); setCustomerRatingCount(data.rating_count || 0) }
+        supabase.from('customers').select('avg_rating, rating_count, is_trusted_member').eq('email', order.customer_email).maybeSingle().then(({ data }) => {
+          if (data) { setCustomerAvgRating(data.avg_rating || null); setCustomerRatingCount(data.rating_count || 0); setCustomerIsTrusted(data.is_trusted_member || false) }
           setLoadedCustomerRating(true)
         })
       }
     }, [expanded, loadedCustomerRating])
+
+    function openPriceModal() {
+      setConfirmedPrice(order.budget?.toString() || '')
+      setAiPricing(null)
+      setShowPriceModal(true)
+      if (baker?.tier === 'pro') {
+        setAiPricingLoading(true)
+        fetch('/api/ai/pricing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event_type: order.event_type,
+            servings: order.servings,
+            item_description: order.item_description,
+            scope_flavor_details: order.scope_flavor_details,
+            scope_design_description: order.scope_design_description,
+            city: baker.city,
+            state: baker.state,
+            budget: order.budget,
+          }),
+        })
+          .then(r => r.json())
+          .then(d => { if (d.low && d.high) setAiPricing(d) })
+          .catch(() => {})
+          .finally(() => setAiPricingLoading(false))
+      }
+    }
 
     async function handleSendQuestion() {
       if (!localQuestion.trim()) return
@@ -610,31 +810,132 @@ async function triggerEmergencyPause() {
 
     return (
       <>
-      {/* Accept Confirmation Modal */}
-      {showAcceptModal && (
+      {/* High-Value Pre-Acceptance Scope Review ($750+) */}
+      {showHighValueReview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <h3 className="font-bold text-lg mb-4" style={{ color: '#2d1a0e' }}>Confirm Accept Order</h3>
-            <div className="flex flex-col gap-2.5 mb-4 p-4 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
-              <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Customer</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.customer_name}</p></div>
-              <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Event Type</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.event_type}</p></div>
-              <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Event Date</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{(() => { const [y,m,d] = order.event_date.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([],{month:'long',day:'numeric',year:'numeric'}) })()}</p></div>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl overflow-y-auto" style={{ maxHeight: '90vh' }}>
+            <h3 className="font-bold text-lg mb-1" style={{ color: '#8B4513' }}>High-Value Order — Review Scope</h3>
+            <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>This is a high-value order. Review the full scope before committing.</p>
+            <div className="flex flex-col gap-2.5 mb-4 p-4 rounded-xl" style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa' }}>
+              {order.scope_serving_count && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Exact Servings</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.scope_serving_count}</p></div>}
+              {order.scope_flavor_details && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Flavor Details</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.scope_flavor_details}</p></div>}
+              {order.scope_design_description && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Design Description</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.scope_design_description}</p></div>}
+              {order.scope_fulfillment_method && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Fulfillment</p><p className="text-sm font-medium capitalize" style={{ color: '#2d1a0e' }}>{order.scope_fulfillment_method}</p></div>}
               <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Budget</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>${order.budget}</p></div>
-              {order.servings && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Servings</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.servings}</p></div>}
-              {order.fulfillment_type && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Fulfillment</p><p className="text-sm font-medium capitalize" style={{ color: '#2d1a0e' }}>{order.fulfillment_type}</p></div>}
+              <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Event Date</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{(() => { const [y,m,d] = order.event_date.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([],{month:'long',day:'numeric',year:'numeric'}) })()}</p></div>
             </div>
-            {order.budget > 150 && (
-              <p className="text-sm font-bold mb-4 px-4 py-3 rounded-xl" style={{ color: '#991b1b', backgroundColor: '#fee2e2' }}>
-                You are committing to make this order. Cancelling after accepting will result in a full refund to the customer and a strike on your account.
-              </p>
-            )}
+            <label className="flex items-start gap-2 cursor-pointer mb-4">
+              <input type="checkbox" checked={highValueScopeConfirmed} onChange={e => setHighValueScopeConfirmed(e.target.checked)} className="mt-0.5 flex-shrink-0" />
+              <span className="text-xs" style={{ color: '#2d1a0e' }}>I confirm I can fulfill this order as described.</span>
+            </label>
             <div className="flex gap-3">
-              <button onClick={() => setShowAcceptModal(false)} className="flex-1 py-3 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Review Order</button>
-              <button onClick={() => { updateOrderStatus(order.id, 'confirmed'); setShowAcceptModal(false) }} className="flex-1 py-3 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Yes, Accept Order</button>
+              <button onClick={() => { setShowHighValueReview(false); setHighValueScopeConfirmed(false) }} className="flex-1 py-3 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Go Back</button>
+              <button onClick={() => { setShowHighValueReview(false); openPriceModal() }} disabled={!highValueScopeConfirmed} className="flex-1 py-3 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#8B4513', opacity: !highValueScopeConfirmed ? 0.5 : 1 }}>Continue to Accept</button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Set Price Modal */}
+      {showPriceModal && (() => {
+        const priceNum = parseFloat(confirmedPrice) || 0
+        const budget = order.budget || 0
+        const isAbove = priceNum > budget
+        const isBelow = priceNum > 0 && priceNum < budget
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl overflow-y-auto" style={{ maxHeight: '90vh' }}>
+              <h3 className="font-bold text-lg mb-1" style={{ color: '#2d1a0e' }}>Set Your Price</h3>
+              <p className="text-xs mb-4" style={{ color: '#5c3d2e' }}>Enter your price for this order. If your price matches the customer's budget, confirm it below. If not, adjust it here instead of using Counter Offer.</p>
+              <div className="flex flex-col gap-2 mb-4 p-3 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                <div className="flex justify-between text-xs"><span style={{ color: '#5c3d2e' }}>Customer</span><span className="font-semibold" style={{ color: '#2d1a0e' }}>{order.customer_name}</span></div>
+                <div className="flex justify-between text-xs"><span style={{ color: '#5c3d2e' }}>Event</span><span className="font-semibold" style={{ color: '#2d1a0e' }}>{order.event_type}</span></div>
+                <div className="flex justify-between text-xs"><span style={{ color: '#5c3d2e' }}>Date</span><span className="font-semibold" style={{ color: '#2d1a0e' }}>{(() => { const [y,m,d] = order.event_date.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}) })()}</span></div>
+                {order.servings && <div className="flex justify-between text-xs"><span style={{ color: '#5c3d2e' }}>Servings</span><span className="font-semibold" style={{ color: '#2d1a0e' }}>{order.servings}</span></div>}
+                <div className="flex justify-between text-xs"><span style={{ color: '#5c3d2e' }}>Customer's Budget</span><span className="font-semibold" style={{ color: '#2d1a0e' }}>${budget}</span></div>
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>Your Price</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: '#5c3d2e' }}>$</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={confirmedPrice}
+                    onChange={e => setConfirmedPrice(e.target.value)}
+                    className="w-full pl-7 pr-4 py-2.5 rounded-lg border text-sm"
+                    style={{ borderColor: '#e0d5cc', color: '#2d1a0e', backgroundColor: '#faf8f6' }}
+                    autoFocus
+                  />
+                </div>
+              </div>
+              {isAbove && (
+                <div className="mb-3 px-4 py-3 rounded-xl text-xs font-semibold" style={{ backgroundColor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                  ⚠️ Your price exceeds the customer's budget. Consider using Counter Offer instead so the customer can review and approve the higher price.
+                </div>
+              )}
+              {isBelow && (
+                <div className="mb-3 px-4 py-3 rounded-xl text-xs" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>
+                  Your price is below the customer's budget. The customer will be charged your price of ${priceNum.toFixed(2)}.
+                </div>
+              )}
+              {baker?.tier === 'pro' && (
+                <div className="mb-4 p-3 rounded-xl" style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd' }}>
+                  <p className="text-xs font-semibold mb-1" style={{ color: '#0c4a6e' }}>AI Pricing Insight</p>
+                  {aiPricingLoading ? (
+                    <p className="text-xs" style={{ color: '#5c3d2e' }}>Analyzing market rates…</p>
+                  ) : aiPricing ? (
+                    <>
+                      <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>Market rate: ${aiPricing.low}–${aiPricing.high}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{aiPricing.reasoning}</p>
+                      <p className="text-xs mt-1 opacity-60" style={{ color: '#2d1a0e' }}>Powered by AI · Based on market rates</p>
+                    </>
+                  ) : null}
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button onClick={() => { setShowPriceModal(false); setConfirmedPrice('') }} className="flex-1 py-3 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Cancel</button>
+                <button
+                  onClick={() => { setShowPriceModal(false); setShowAcceptModal(true) }}
+                  disabled={!priceNum || priceNum <= 0}
+                  className="flex-1 py-3 rounded-xl text-white text-sm font-semibold"
+                  style={{ backgroundColor: '#2d1a0e', opacity: (!priceNum || priceNum <= 0) ? 0.5 : 1 }}
+                >Confirm Price and Continue</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Accept Confirmation Modal */}
+      {showAcceptModal && (() => {
+        const priceDollars = parseFloat(confirmedPrice) || order.budget
+        const priceCents = Math.round(priceDollars * 100)
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+              <h3 className="font-bold text-lg mb-4" style={{ color: '#2d1a0e' }}>Confirm Accept Order</h3>
+              <div className="flex flex-col gap-2.5 mb-4 p-4 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Customer</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.customer_name}</p></div>
+                <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Event Type</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.event_type}</p></div>
+                <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Event Date</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{(() => { const [y,m,d] = order.event_date.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([],{month:'long',day:'numeric',year:'numeric'}) })()}</p></div>
+                <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Your Price</p><p className="text-sm font-bold" style={{ color: '#2d1a0e' }}>${priceDollars.toFixed(2)}</p></div>
+                {order.servings && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Servings</p><p className="text-sm font-medium" style={{ color: '#2d1a0e' }}>{order.servings}</p></div>}
+                {order.fulfillment_type && <div><p className="text-xs font-semibold" style={{ color: '#5c3d2e' }}>Fulfillment</p><p className="text-sm font-medium capitalize" style={{ color: '#2d1a0e' }}>{order.fulfillment_type}</p></div>}
+              </div>
+              {priceDollars > 150 && (
+                <p className="text-sm font-bold mb-4 px-4 py-3 rounded-xl" style={{ color: '#991b1b', backgroundColor: '#fee2e2' }}>
+                  You are committing to make this order. Cancelling after accepting will result in a full refund to the customer and a strike on your account.
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button onClick={() => { setShowAcceptModal(false); setShowPriceModal(true) }} className="flex-1 py-3 rounded-xl border text-sm font-semibold" style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}>Back</button>
+                <button onClick={() => { updateOrderStatus(order.id, 'confirmed', priceCents); setShowAcceptModal(false); setConfirmedPrice('') }} className="flex-1 py-3 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e' }}>Yes, Accept Order</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Cancel Order Modal */}
       {showCancelModal && (
@@ -811,10 +1112,12 @@ async function triggerEmergencyPause() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-bold text-sm" style={{ color: '#2d1a0e' }}>{order.customer_name}</p>
+                {customerIsTrusted && <span className="px-2 py-0.5 text-xs rounded-full font-semibold flex-shrink-0" style={{ backgroundColor: '#dbeafe', color: '#1e3a5f' }}>🛡️ Trusted</span>}
                 <span className="px-2 py-0.5 text-xs rounded-full font-semibold flex-shrink-0" style={{ backgroundColor: s.bg, color: s.color }}>{s.label}</span>
                 {order.baker_question && !expanded && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Question sent</span>}
                 {order.counter_status === 'pending' && !expanded && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fff7ed', color: '#c2410c' }}>Counter pending</span>}
                 {order.inspiration_photo_urls?.length > 0 && !expanded && <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>{order.inspiration_photo_urls.length} photo{order.inspiration_photo_urls.length > 1 ? 's' : ''}</span>}
+                {order.is_multi_item && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#dbeafe', color: '#1e40af' }}>Multi-item order</span>}
               </div>
               <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>
                 {order.event_type} · {(() => { const [y,m,d] = (order.event_date).split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}) })()}
@@ -843,7 +1146,14 @@ async function triggerEmergencyPause() {
         <div className="px-5 pb-3 flex gap-2 flex-wrap" style={{ backgroundColor: expanded ? '#faf8f6' : 'white' }}>
           {order.status === 'pending' && !localAsking && !localCountering && (
             <>
-              <button onClick={() => setShowAcceptModal(true)} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Accept</button>
+              <button onClick={() => {
+                if (order.budget >= 750 && order.scope_serving_count) {
+                  setHighValueScopeConfirmed(false)
+                  setShowHighValueReview(true)
+                } else {
+                  openPriceModal()
+                }
+              }} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#2d1a0e' }}>Accept</button>
               <button onClick={() => { setExpanded(true); setLocalCountering(true) }} className="px-4 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#8B4513', color: '#8B4513' }}>Counter Offer</button>
               <button onClick={() => { setExpanded(true); setLocalAsking(true) }} className="px-4 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#5c3d2e', color: '#5c3d2e' }}>Ask a Question</button>
               <button onClick={() => updateOrderStatus(order.id, 'declined')} className="px-4 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: '#991b1b', color: '#991b1b' }}>Decline</button>
@@ -852,10 +1162,30 @@ async function triggerEmergencyPause() {
           {order.status === 'countered' && order.counter_status === 'pending' && (
             <span className="px-4 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: '#fff7ed', color: '#c2410c' }}>Counter offer sent — awaiting customer response</span>
           )}
-          {order.status === 'confirmed' && <button onClick={() => updateOrderStatus(order.id, 'in_progress')} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#1e40af' }}>Mark In Progress</button>}
-          {order.status === 'in_progress' && <button onClick={() => updateOrderStatus(order.id, 'ready')} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#6b21a8' }}>Mark Ready</button>}
-          {order.status === 'ready' && order.fulfillment_type === 'delivery' && <button onClick={() => setDeliveryModalOrder(order)} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166534' }}>Mark Delivered</button>}
-          {order.status === 'ready' && order.fulfillment_type === 'pickup' && !order.handoff_photo_url && <button onClick={() => setDeliveryModalOrder(order)} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#1e40af' }}>Confirm Handoff</button>}
+          {order.status === 'confirmed' && (
+            <div className="flex flex-col gap-1">
+              <button onClick={() => updateOrderStatus(order.id, 'in_progress')} disabled={!order.deposit_paid_at} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#1e40af', opacity: !order.deposit_paid_at ? 0.4 : 1, cursor: !order.deposit_paid_at ? 'not-allowed' : undefined }}>Mark In Progress</button>
+              {!order.deposit_paid_at && <span className="text-xs" style={{ color: '#9c7b6b' }}>Waiting for customer deposit</span>}
+            </div>
+          )}
+          {order.status === 'in_progress' && (
+            <div className="flex flex-col gap-1">
+              <button onClick={() => updateOrderStatus(order.id, 'ready')} disabled={!order.deposit_paid_at} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#6b21a8', opacity: !order.deposit_paid_at ? 0.4 : 1, cursor: !order.deposit_paid_at ? 'not-allowed' : undefined }}>Mark Ready</button>
+              {!order.deposit_paid_at && <span className="text-xs" style={{ color: '#9c7b6b' }}>Waiting for customer deposit</span>}
+            </div>
+          )}
+          {order.status === 'ready' && order.fulfillment_type === 'delivery' && (
+            <div className="flex flex-col gap-1">
+              <button onClick={() => setDeliveryModalOrder(order)} disabled={!order.deposit_paid_at} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166534', opacity: !order.deposit_paid_at ? 0.4 : 1, cursor: !order.deposit_paid_at ? 'not-allowed' : undefined }}>Mark Delivered</button>
+              {!order.deposit_paid_at && <span className="text-xs" style={{ color: '#9c7b6b' }}>Waiting for customer deposit</span>}
+            </div>
+          )}
+          {order.status === 'ready' && order.fulfillment_type === 'pickup' && !order.handoff_photo_url && (
+            <div className="flex flex-col gap-1">
+              <button onClick={() => setDeliveryModalOrder(order)} disabled={!order.deposit_paid_at} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#1e40af', opacity: !order.deposit_paid_at ? 0.4 : 1, cursor: !order.deposit_paid_at ? 'not-allowed' : undefined }}>Confirm Handoff</button>
+              {!order.deposit_paid_at && <span className="text-xs" style={{ color: '#9c7b6b' }}>Waiting for customer deposit</span>}
+            </div>
+          )}
           {order.status === 'ready' && order.fulfillment_type === 'pickup' && order.handoff_photo_url && <span className="px-4 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>Handoff photo uploaded — awaiting customer confirmation</span>}
           {order.status === 'ready' && !order.fulfillment_type && <button onClick={() => updateOrderStatus(order.id, 'complete')} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#166634' }}>Mark Complete</button>}
           {(order.status === 'confirmed' || order.status === 'in_progress') && (
@@ -913,6 +1243,25 @@ async function triggerEmergencyPause() {
 
             {order.item_description && <div><p className="text-xs font-semibold mb-1" style={{ color: '#5c3d2e' }}>Description</p><p className="text-sm leading-relaxed" style={{ color: '#2d1a0e' }}>{order.item_description}</p></div>}
 
+            {order.is_multi_item && (order.line_items || []).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#2d1a0e' }}>Additional Items</p>
+                <div className="flex flex-col gap-1.5">
+                  {(order.line_items as any[]).map((li: any, i: number) => (
+                    <div key={i} className="px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#dbeafe', color: '#1e40af' }}>
+                      <span className="font-semibold">{li.item_type || 'Item'}</span>
+                      {li.servings ? <span> · {li.servings} servings</span> : null}
+                      {li.description ? <span> · {li.description}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {order.size_reduction_requested && (!order.size_reduction_status || order.size_reduction_status === 'pending') && (
+              <SizeReductionBakerCard order={order} baker={baker} setOrders={setOrders} />
+            )}
+
             {order.inspiration_photo_urls?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold mb-2" style={{ color: '#2d1a0e' }}>Inspiration Photos</p>
@@ -934,6 +1283,7 @@ async function triggerEmergencyPause() {
                   ? <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>★ {customerAvgRating.toFixed(1)} from {customerRatingCount} order{customerRatingCount !== 1 ? 's' : ''}</span>
                   : <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>New customer — no rating yet</span>
               )}
+              {customerIsTrusted && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#dbeafe', color: '#1e3a5f' }}>🛡️ Trusted Member</span>}
               {order.status === 'complete' && alreadyRated && (
                 <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>You rated this customer</span>
               )}
@@ -992,6 +1342,61 @@ async function triggerEmergencyPause() {
 
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
+      {/* Plan Selection Modal — shown once after first approval */}
+      {showPlanModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(45,26,14,0.75)' }}>
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            <div className="px-6 pt-6 pb-5" style={{ backgroundColor: '#2d1a0e' }}>
+              <h2 className="text-xl font-bold text-white mb-1">Welcome to Whiskly</h2>
+              <p className="text-sm" style={{ color: '#c4a882' }}>You've been approved. Choose how you'd like to list on Whiskly.</p>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {/* Free tier */}
+                <div className="rounded-2xl p-4 border-2" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
+                  <p className="font-bold text-base mb-1" style={{ color: '#2d1a0e' }}>Free</p>
+                  <p className="text-2xl font-bold mb-0.5" style={{ color: '#2d1a0e' }}>$0<span className="text-sm font-normal">/mo</span></p>
+                  <p className="text-xs mb-3 font-medium" style={{ color: '#8B4513' }}>10% commission per order</p>
+                  <ul className="text-xs flex flex-col gap-1.5" style={{ color: '#5c3d2e' }}>
+                    <li>✓ Order management</li>
+                    <li>✓ Customer messaging</li>
+                    <li>✓ 3 portfolio photos</li>
+                    <li>✓ Reviews &amp; ratings</li>
+                  </ul>
+                </div>
+                {/* Pro tier */}
+                <div className="rounded-2xl p-4 border-2 relative" style={{ borderColor: '#8B4513', backgroundColor: '#fff7f0' }}>
+                  {proBakerCount < 50 && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-xs font-bold text-white whitespace-nowrap" style={{ backgroundColor: '#8B4513' }}>
+                      Founding Baker
+                    </div>
+                  )}
+                  <p className="font-bold text-base mb-1" style={{ color: '#2d1a0e' }}>Pro</p>
+                  <p className="text-2xl font-bold mb-0.5" style={{ color: '#8B4513' }}>
+                    ${proBakerCount < 50 ? '19' : '29'}<span className="text-sm font-normal">/mo</span>
+                  </p>
+                  <p className="text-xs mb-1 font-medium" style={{ color: '#8B4513' }}>7% commission per order</p>
+                  {proBakerCount < 50 && (
+                    <p className="text-xs mb-2 font-semibold" style={{ color: '#8B4513' }}>Locked in forever · {50 - proBakerCount} spot{50 - proBakerCount !== 1 ? 's' : ''} left</p>
+                  )}
+                  <ul className="text-xs flex flex-col gap-1.5" style={{ color: '#5c3d2e' }}>
+                    <li>✓ Featured placement</li>
+                    <li>✓ Verified badge</li>
+                    <li>✓ 10 portfolio photos</li>
+                    <li>✓ Analytics + booking link</li>
+                  </ul>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => handlePlanSelection('free')} className="flex-1 py-3 rounded-xl border font-semibold text-sm" style={{ borderColor: '#e0d5cc', color: '#2d1a0e' }}>Start Free</button>
+                <button onClick={() => handlePlanSelection('pro')} className="flex-1 py-3 rounded-xl text-white font-semibold text-sm" style={{ backgroundColor: '#8B4513' }}>Upgrade to Pro →</button>
+              </div>
+              <p className="text-xs text-center mt-3" style={{ color: '#9c7b6b' }}>You can always upgrade later from your profile settings.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Vacation Conflict Modal */}
       {vacConflictOrders.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
@@ -1068,16 +1473,92 @@ async function triggerEmergencyPause() {
 
       <div className="px-4 md:px-8 py-8 max-w-6xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{businessName || 'Your Bakery'}</h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{businessName || 'Your Bakery'}</h1>
+            {baker?.is_top_baker && (
+              <span className="px-3 py-1 rounded-full text-sm font-semibold" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>⭐ Top Baker</span>
+            )}
+          </div>
           <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Manage your profile and customer requests</p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center"><p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{pending.length}</p><p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Pending</p></div>
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center"><p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{confirmed.length}</p><p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Accepted</p></div>
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center"><p className="text-3xl font-bold" style={{ color: '#1e40af' }}>{inProgress.length}</p><p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>In Progress</p></div>
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center"><p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>{orders.length}</p><p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Total</p></div>
         </div>
+
+        {(() => {
+          const trackedOrders = orders.filter(o => o.status !== 'cancelled' && o.referral_source)
+          const whisklyCount = trackedOrders.filter(o => o.referral_source === 'whiskly_search').length
+          const ownCount = trackedOrders.filter(o => o.referral_source !== 'whiskly_search').length
+          const total = trackedOrders.length
+          const whisklyPct = total > 0 ? Math.round((whisklyCount / total) * 100) : 0
+          const ownPct = total > 0 ? 100 - whisklyPct : 0
+          return (
+            <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
+              <p className="font-bold mb-3" style={{ color: '#2d1a0e' }}>Where your orders come from</p>
+              {total > 0 && (
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="rounded-xl p-4 text-center" style={{ backgroundColor: '#f5f0eb' }}>
+                    <p className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>{whisklyCount}</p>
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: '#5c3d2e' }}>Via Whiskly</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#9c7b6b' }}>{whisklyPct}%</p>
+                  </div>
+                  <div className="rounded-xl p-4 text-center" style={{ backgroundColor: '#f5f0eb' }}>
+                    <p className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>{ownCount}</p>
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: '#5c3d2e' }}>Your own marketing</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#9c7b6b' }}>{ownPct}%</p>
+                  </div>
+                </div>
+              )}
+              <p className="text-xs" style={{ color: '#9c7b6b' }}>Tracking started recently. This data grows with each new order.</p>
+            </div>
+          )
+        })()}
+
+        {(() => {
+          const now = Date.now()
+          const attentionItems: { orderId: string; label: string; name: string; eventType: string; eventDate: string }[] = []
+          for (const o of orders) {
+            const daysUntilEvent = o.event_date ? Math.round((new Date(o.event_date + 'T00:00:00').getTime() - now) / 86400000) : null
+            const hoursSinceCreated = (now - new Date(o.created_at).getTime()) / 3600000
+            if (o.status === 'pending' && hoursSinceCreated > 24)
+              attentionItems.push({ orderId: o.id, label: 'New request — awaiting your response', name: o.customer_name, eventType: o.event_type, eventDate: o.event_date })
+            if (o.status === 'confirmed' && !o.deposit_paid_at && daysUntilEvent !== null && daysUntilEvent <= 14)
+              attentionItems.push({ orderId: o.id, label: 'Deposit not paid — event approaching', name: o.customer_name, eventType: o.event_type, eventDate: o.event_date })
+            if (o.size_reduction_requested && (!o.size_reduction_status || o.size_reduction_status === 'pending'))
+              attentionItems.push({ orderId: o.id, label: 'Size reduction request from customer', name: o.customer_name, eventType: o.event_type, eventDate: o.event_date })
+            if (o.status === 'in_progress' && daysUntilEvent !== null && daysUntilEvent <= 7 && daysUntilEvent >= 0)
+              attentionItems.push({ orderId: o.id, label: 'Event in ' + daysUntilEvent + ' day' + (daysUntilEvent !== 1 ? 's' : '') + ' — is your order on track?', name: o.customer_name, eventType: o.event_type, eventDate: o.event_date })
+          }
+          if (attentionItems.length === 0) return null
+          return (
+            <div className="mb-6 rounded-2xl overflow-hidden shadow-sm" style={{ border: '2px solid #dc2626' }}>
+              <button onClick={() => setNeedsAttentionCollapsed(v => !v)} className="w-full flex items-center justify-between px-5 py-3" style={{ backgroundColor: '#fef2f2' }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold" style={{ color: '#991b1b' }}>Needs Attention</span>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold text-white" style={{ backgroundColor: '#dc2626' }}>{attentionItems.length}</span>
+                </div>
+                <span className="text-xs" style={{ color: '#991b1b' }}>{needsAttentionCollapsed ? '▼' : '▲'}</span>
+              </button>
+              {!needsAttentionCollapsed && (
+                <div className="flex flex-col divide-y" style={{ backgroundColor: 'white', borderColor: '#fee2e2' }}>
+                  {attentionItems.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between px-5 py-3 gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold" style={{ color: '#991b1b' }}>{item.label}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{item.name} · {item.eventType} · {item.eventDate}</p>
+                      </div>
+                      <button onClick={() => setActiveTab('orders')} className="flex-shrink-0 px-4 py-2 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: '#dc2626' }}>View Order</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         <div className="flex gap-2 mb-6 flex-wrap">
           {['Overview', 'Orders', 'Messages', 'Profile', 'Gallery'].map((tab) => (
@@ -1097,6 +1578,122 @@ async function triggerEmergencyPause() {
 
         {activeTab === 'overview' && (
           <div className="flex flex-col gap-6">
+
+            {/* Profile Completion Checklist — shown whenever any of the six items is incomplete */}
+            {(() => {
+              const checks = [
+                { label: 'Profile photo uploaded', done: !!baker?.profile_photo_url, tab: 'profile' },
+                { label: 'At least 3 portfolio photos', done: portfolio.length >= 3, tab: 'gallery' },
+                { label: 'Starting price set', done: !!(baker?.starting_price && baker.starting_price > 0), tab: 'profile' },
+                { label: 'Bio written', done: !!(baker?.bio && baker.bio.trim().length > 0), tab: 'profile' },
+                { label: 'Plan selected (Free or Pro)', done: !!baker?.tier, tab: 'profile' },
+                { label: 'Stripe payout connected', done: !!baker?.stripe_account_id, tab: 'profile', isStripe: true },
+              ]
+              const doneCount = checks.filter(c => c.done).length
+              if (doneCount === 6) return null
+              return (
+                <div className="bg-white rounded-2xl p-6 shadow-sm" style={{ borderLeft: '4px solid #8B4513' }}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h2 className="text-lg font-bold" style={{ color: '#2d1a0e' }}>Complete your profile</h2>
+                      <p className="text-sm mt-0.5" style={{ color: '#5c3d2e' }}>Finish all 6 steps to appear on the Browse Bakers page.</p>
+                    </div>
+                    <span className="text-sm font-bold px-3 py-1 rounded-full flex-shrink-0 ml-4" style={{ backgroundColor: doneCount === 6 ? '#dcfce7' : '#f5f0eb', color: doneCount === 6 ? '#166534' : '#8B4513' }}>{doneCount}/6</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {(checks as any[]).map((item, i) => (
+                      <div key={i}>
+                        <button onClick={() => setActiveTab(item.tab)}
+                          className="flex items-center gap-3 px-4 py-3 rounded-xl text-left w-full transition-opacity hover:opacity-80"
+                          style={{ backgroundColor: item.done ? '#f0fdf4' : '#faf8f6', border: '1px solid ' + (item.done ? '#bbf7d0' : '#e0d5cc') }}>
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: item.done ? '#dcfce7' : '#e0d5cc' }}>
+                            {item.done ? (
+                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <path d="M2 6l3 3 5-5" stroke="#15803d" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            ) : (
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#9c7b6b' }} />
+                            )}
+                          </div>
+                          <span className="text-sm font-medium flex-1" style={{ color: item.done ? '#15803d' : '#2d1a0e' }}>{item.label}</span>
+                          {!item.done && (
+                            <span className="text-xs font-semibold" style={{ color: '#8B4513' }}>Complete →</span>
+                          )}
+                        </button>
+                        {item.isStripe && !item.done && (
+                          <div className="mt-1.5 px-4 py-3 rounded-xl" style={{ backgroundColor: '#faf8f6', border: '1px solid #5c3d2e' }}>
+                            <p className="text-xs leading-relaxed mb-2" style={{ color: '#5c3d2e' }}>When Stripe asks for your website, use your Whiskly profile link:</p>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium flex-1 truncate" style={{ color: '#2d1a0e' }}>https://www.whiskly.co/bakers/{baker?.id}</span>
+                              <button onClick={(e) => { e.stopPropagation(); copyStripeUrl() }}
+                                className="text-xs font-semibold px-2.5 py-1 rounded-lg flex-shrink-0"
+                                style={{ backgroundColor: '#2d1a0e', color: 'white' }}>
+                                {copiedStripeUrl ? 'Copied!' : 'Copy'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Touch 2: 5 completed orders — commission savings nudge */}
+            {!dismissedTouch2 && (() => {
+              const completedOrds = orders.filter(o => o.status === 'complete')
+              const isFreeTier = baker?.tier !== 'pro'
+              if (completedOrds.length < 5 || !isFreeTier) return null
+              const totalOrderValue = completedOrds.slice(0, 5).reduce((sum, o) => sum + (o.amount_total ? o.amount_total / 100 : (o.budget || 0)), 0)
+              const savings = (totalOrderValue * 0.03).toFixed(2)
+              return (
+                <div className="rounded-2xl p-5 flex items-start gap-4" style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa' }}>
+                  <div className="flex-1">
+                    <p className="font-bold text-sm mb-1" style={{ color: '#c2410c' }}>You could have saved ${savings} in commission</p>
+                    <p className="text-xs leading-relaxed" style={{ color: '#92400e' }}>
+                      Pro bakers pay 7% commission instead of 10%. On your first 5 completed orders, that's ${savings} you could have kept. The more you earn, the more the difference adds up.
+                    </p>
+                    <a href="/join?plan=pro" className="inline-block mt-3 px-4 py-2 rounded-lg text-white text-xs font-semibold" style={{ backgroundColor: '#8B4513' }}>Upgrade to Pro</a>
+                  </div>
+                  <button onClick={dismissTouch2Banner} className="text-xs font-semibold px-2 py-1 rounded-lg flex-shrink-0" style={{ color: '#92400e', backgroundColor: '#fed7aa' }}>Dismiss</button>
+                </div>
+              )
+            })()}
+
+            {/* Touch 3: 30-day prompt */}
+            {!dismissedTouch3 && (() => {
+              const accountAgeDays = baker ? Math.floor((Date.now() - new Date(baker.created_at).getTime()) / (1000 * 60 * 60 * 24)) : 0
+              const isFreeTier = baker?.tier !== 'pro'
+              if (accountAgeDays < 30 || !isFreeTier) return null
+              const isFoundingAvailable = proBakerCount < 50
+              const spotsLeft = Math.max(0, 50 - proBakerCount)
+              return (
+                <div className="rounded-2xl p-5 flex items-start gap-4" style={{ backgroundColor: '#f5f0ff', border: '1px solid #ddd6fe' }}>
+                  <div className="flex-1">
+                    {isFoundingAvailable ? (
+                      <>
+                        <p className="font-bold text-sm mb-1" style={{ color: '#5b21b6' }}>Founding Baker pricing closes soon</p>
+                        <p className="text-xs leading-relaxed" style={{ color: '#6d28d9' }}>
+                          Founding Baker pricing ($19/month, locked in forever) is available to the first 50 bakers only. {spotsLeft} spot{spotsLeft !== 1 ? 's' : ''} remaining. Once they're gone, Pro is $29/month.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-bold text-sm mb-1" style={{ color: '#5b21b6' }}>Stand out on Whiskly</p>
+                        <p className="text-xs leading-relaxed" style={{ color: '#6d28d9' }}>
+                          Pro bakers receive featured placement in browse results and a Verified badge — making it easier for customers to find and trust you.
+                        </p>
+                      </>
+                    )}
+                    <a href="/join?plan=pro" className="inline-block mt-3 px-4 py-2 rounded-lg text-white text-xs font-semibold" style={{ backgroundColor: '#5b21b6' }}>Upgrade to Pro</a>
+                  </div>
+                  <button onClick={dismissTouch3Banner} className="text-xs font-semibold px-2 py-1 rounded-lg flex-shrink-0" style={{ color: '#5b21b6', backgroundColor: '#ddd6fe' }}>Dismiss</button>
+                </div>
+              )
+            })()}
+
             {(() => {
               const completed = orders.filter(o => o.status === 'complete')
               const totalRevenue = completed.reduce((sum, o) => sum + ((o.amount_total || (o.budget && o.budget * 100) || 0) / 100 * 0.88), 0)
@@ -1140,60 +1737,187 @@ async function triggerEmergencyPause() {
               )
             })()}
 
-            {/* Reserve Balance & Payouts */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Payouts & Reserve</h2>
-              <div className="grid grid-cols-2 gap-4 mb-5">
-                <div className="rounded-xl p-4" style={{ backgroundColor: '#f5f0eb' }}>
-                  <p className="text-xs mb-1" style={{ color: '#5c3d2e' }}>Reserve Balance (held by Whiskly)</p>
-                  <p className="text-2xl font-bold" style={{ color: '#2d1a0e' }}>${((baker?.baker_reserve_balance || 0)).toFixed(2)}</p>
-                  <p className="text-xs mt-1" style={{ color: '#5c3d2e' }}>5% of each payout · released annually</p>
-                </div>
-                <div className="rounded-xl p-4" style={{ backgroundColor: '#f5f0eb' }}>
-                  <p className="text-xs mb-1" style={{ color: '#5c3d2e' }}>Instant Payout</p>
-                  {baker?.instant_payout_eligible ? (
-                    <div className="flex items-center gap-3 mt-1">
-                      <button
-                        onClick={toggleInstantPayout}
-                        disabled={togglingInstantPayout}
-                        className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-                        style={{ backgroundColor: baker?.instant_payout_enabled ? '#8B4513' : '#d6ccc4' }}
-                      >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${baker?.instant_payout_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                      </button>
-                      <span className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{baker?.instant_payout_enabled ? 'On' : 'Off'}</span>
+            {/* Reserve Balance Section */}
+            {(() => {
+              const reserveBalance: number = reserveData?.balance ?? 0
+              const reserveCap = 500
+              const reservePct = Math.min(100, (reserveBalance / reserveCap) * 100)
+              const isEligible: boolean = reserveData?.is_instant_payout_eligible ?? false
+              const isElected: boolean = baker?.instant_payout_enabled ?? false
+              const completedOrders: number = reserveData?.completed_orders_count ?? 0
+              const accountAgeDays = baker ? Math.floor((Date.now() - new Date(baker.created_at).getTime()) / (1000 * 60 * 60 * 24)) : 0
+
+              const criteria = [
+                { label: `5 completed orders (${completedOrders} so far)`, met: completedOrders >= 5, tip: 'Orders where the customer confirmed delivery and the 3-day dispute window has closed without issue.' },
+                { label: 'Account active for 30 days', met: accountAgeDays >= 30, tip: 'Your baker account must be at least 30 days old from your approval date.' },
+                { label: `Reserve balance of $100 or more ($${reserveBalance.toFixed(2)} current)`, met: reserveBalance >= 100, tip: 'Whiskly holds 5% of each payout in a reserve balance up to a $500 cap. You need at least $100 in reserve before instant payouts unlock.' },
+                { label: 'No disputes in the past 90 days', met: recentDisputeCount === 0, tip: 'You have no unresolved disputes or disputes decided against you in the last 90 days.' },
+                { label: 'Identity verified', met: baker?.verified === true, tip: 'Stripe has confirmed your identity through your payout account setup. Complete your Stripe Connect onboarding fully to satisfy this requirement.' },
+              ]
+
+              const txTypeLabel = (t: string) =>
+                t === 'withhold' ? 'Reserve Hold'
+                : t === 'quarterly_release' ? 'Quarterly Release'
+                : t === 'dispute_draw' ? 'Dispute Draw'
+                : t
+
+              const trancheTypeLabel = (t: string) =>
+                t === 'ingredient_advance' ? 'Ingredient Advance'
+                : t === 'final_payout' ? 'Final Payout'
+                : t
+
+              return (
+                <div className="flex flex-col gap-4">
+                  {/* 1. Reserve balance card */}
+                  <div className="bg-white rounded-2xl p-6 shadow-sm">
+                    <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Reserve Balance</h2>
+                    <div className="flex items-end justify-between mb-2">
+                      <p className="text-3xl font-bold" style={{ color: '#2d1a0e' }}>${reserveBalance.toFixed(2)}</p>
+                      <p className="text-xs" style={{ color: '#5c3d2e' }}>of ${reserveCap} cap</p>
                     </div>
-                  ) : (
-                    <div>
-                      <p className="text-sm font-semibold mt-1" style={{ color: '#5c3d2e' }}>Not yet eligible</p>
-                      <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Requires 20+ completed orders and 0 disputes</p>
+                    <div className="w-full rounded-full overflow-hidden mb-3" style={{ backgroundColor: '#e0d5cc', height: '8px' }}>
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${reservePct}%`, backgroundColor: reservePct >= 80 ? '#8B4513' : '#c4a882' }}
+                      />
                     </div>
-                  )}
-                  {baker?.instant_payout_enabled && <p className="text-xs mt-2" style={{ color: '#5c3d2e' }}>1% fee deducted per instant payout</p>}
-                </div>
-              </div>
-              {payouts.length > 0 ? (
-                <div>
-                  <p className="text-xs font-semibold mb-2" style={{ color: '#5c3d2e' }}>Recent payouts</p>
-                  <div className="flex flex-col gap-2">
-                    {payouts.map(p => (
-                      <div key={p.id} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: '#faf8f6' }}>
-                        <div>
-                          <p className="text-xs font-medium" style={{ color: '#2d1a0e' }}>{p.tranche === 'ingredient_release' ? 'Ingredient advance' : 'Final payout'}</p>
-                          <p className="text-xs" style={{ color: '#5c3d2e' }}>{new Date(p.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                    <p className="text-xs leading-relaxed" style={{ color: '#5c3d2e' }}>
+                      Funds held by Whiskly to cover disputes. Released quarterly once above $200.
+                    </p>
+                  </div>
+
+                  {/* 2. Instant payout status */}
+                  <div className="bg-white rounded-2xl p-6 shadow-sm">
+                    <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>Instant Payout</h2>
+                    {isEligible ? (
+                      <div>
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-4" style={{ backgroundColor: '#dcfce7' }}>
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#15803d' }} />
+                          <span className="text-xs font-semibold" style={{ color: '#15803d' }}>Instant Payout Available</span>
                         </div>
-                        <div className="text-right">
-                          <p className="text-xs font-semibold" style={{ color: '#2d1a0e' }}>${(p.amount / 100).toFixed(2)}</p>
-                          <p className="text-xs" style={{ color: p.status === 'paid' ? '#15803d' : '#5c3d2e' }}>{p.status}</p>
+                        <div className="flex items-center gap-4 p-4 rounded-xl" style={{ backgroundColor: '#f5f0eb' }}>
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>Elect instant payout</p>
+                            <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>Receive payouts within minutes instead of 3 days. A 7% reserve rate applies when elected.</p>
+                          </div>
+                          <button
+                            onClick={toggleInstantPayout}
+                            disabled={togglingInstantPayout}
+                            className="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors"
+                            style={{ backgroundColor: isElected ? '#8B4513' : '#d6ccc4' }}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isElected ? 'translate-x-6' : 'translate-x-1'}`} />
+                          </button>
                         </div>
                       </div>
-                    ))}
+                    ) : (
+                      <div>
+                        <p className="text-sm mb-4" style={{ color: '#5c3d2e' }}>Complete all criteria below to unlock instant payouts.</p>
+                        <div className="flex flex-col gap-2.5">
+                          {(criteria as any[]).map((c, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <div
+                                className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center mt-0.5"
+                                style={{ backgroundColor: c.met ? '#dcfce7' : '#f5f0eb' }}
+                              >
+                                {c.met ? (
+                                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                    <path d="M2 5l2.5 2.5L8 3" stroke="#15803d" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                ) : (
+                                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#9c7b6b' }} />
+                                )}
+                              </div>
+                              <p className="text-sm leading-snug" style={{ color: c.met ? '#2d1a0e' : '#5c3d2e' }}>{c.label}</p>
+                              <div className="relative">
+                                <button
+                                  onMouseEnter={() => setOpenTipIdx(i)}
+                                  onMouseLeave={() => setOpenTipIdx(null)}
+                                  onClick={() => setOpenTipIdx(openTipIdx === i ? null : i)}
+                                  className="w-4 h-4 rounded-full flex items-center justify-center"
+                                  style={{ backgroundColor: '#e0d5cc', color: '#5c3d2e', fontSize: '9px', fontWeight: 700, lineHeight: 1, cursor: 'default' }}
+                                >?</button>
+                                {openTipIdx === i && (
+                                  <div className="absolute z-10 rounded-xl shadow-lg text-xs leading-relaxed p-3"
+                                    style={{ right: 0, bottom: 'calc(100% + 6px)', width: '220px', backgroundColor: '#2d1a0e', color: '#f5f0eb' }}>
+                                    {c.tip}
+                                    <div className="absolute" style={{ right: '6px', top: '100%', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid #2d1a0e' }} />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
+
+                  {/* 3. Recent reserve transactions */}
+                  <div className="bg-white rounded-2xl p-6 shadow-sm">
+                    <h2 className="text-base font-bold mb-4" style={{ color: '#2d1a0e' }}>Reserve Transactions</h2>
+                    {reserveTxs.length === 0 ? (
+                      <p className="text-sm text-center py-4" style={{ color: '#5c3d2e' }}>No reserve transactions yet.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid #e0d5cc' }}>
+                              {['Date', 'Type', 'Amount', 'Balance After'].map(h => (
+                                <th key={h} className="text-left py-2 pr-4 font-semibold" style={{ color: '#5c3d2e' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {reserveTxs.map(tx => (
+                              <tr key={tx.id} className="border-b" style={{ borderColor: '#f5f0eb' }}>
+                                <td className="py-2.5 pr-4" style={{ color: '#5c3d2e' }}>
+                                  {new Date(tx.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </td>
+                                <td className="py-2.5 pr-4 font-medium" style={{ color: '#2d1a0e' }}>{txTypeLabel(tx.transaction_type)}</td>
+                                <td className="py-2.5 pr-4" style={{ color: tx.transaction_type === 'quarterly_release' ? '#15803d' : '#2d1a0e' }}>
+                                  {tx.transaction_type === 'quarterly_release' ? '+' : '-'}${Math.abs(tx.amount).toFixed(2)}
+                                </td>
+                                <td className="py-2.5 font-semibold" style={{ color: '#2d1a0e' }}>${(tx.balance_after ?? 0).toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 4. Upcoming payout tranches */}
+                  {pendingTranches.length > 0 && (
+                    <div className="bg-white rounded-2xl p-6 shadow-sm">
+                      <h2 className="text-base font-bold mb-4" style={{ color: '#2d1a0e' }}>Upcoming Payouts</h2>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid #e0d5cc' }}>
+                              {['Order', 'Type', 'Net Amount', 'Scheduled'].map(h => (
+                                <th key={h} className="text-left py-2 pr-4 font-semibold" style={{ color: '#5c3d2e' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pendingTranches.map(t => (
+                              <tr key={t.id} className="border-b" style={{ borderColor: '#f5f0eb' }}>
+                                <td className="py-2.5 pr-4 font-mono" style={{ color: '#5c3d2e' }}>{t.order_id?.slice(0, 8)}</td>
+                                <td className="py-2.5 pr-4 font-medium" style={{ color: '#2d1a0e' }}>{trancheTypeLabel(t.tranche_type)}</td>
+                                <td className="py-2.5 pr-4 font-semibold" style={{ color: '#2d1a0e' }}>${((t.net_amount ?? 0) / 100).toFixed(2)}</td>
+                                <td className="py-2.5" style={{ color: '#5c3d2e' }}>
+                                  {t.scheduled_for ? new Date(t.scheduled_for).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <p className="text-sm text-center py-2" style={{ color: '#5c3d2e' }}>No payouts yet — they will appear here after your first completed order.</p>
-              )}
-            </div>
+              )
+            })()}
 
             {(() => {
               const upcoming = orders.filter(o => (o.status === 'confirmed' || o.status === 'in_progress' || o.status === 'ready') && getDaysUntil(o.event_date) > 0).sort((a, b) => getDaysUntil(a.event_date) - getDaysUntil(b.event_date)).slice(0, 5)
@@ -1246,14 +1970,14 @@ async function triggerEmergencyPause() {
                   <div className="px-4 py-2 bg-[#faf8f6] rounded-lg text-sm inline-block" style={{ color: '#5c3d2e' }}>{typeof window !== 'undefined' ? window.location.origin + '/bakers/' + baker?.id : ''}</div>
                 </div>
               ) : (
-                <div className="flex flex-col gap-3">{[...pending, ...countered].slice(0, 5).map(order => <OrderCard key={order.id} order={order} />)}</div>
+                <div className="flex flex-col gap-3">{sortOrders([...pending, ...countered]).slice(0, 5).map(order => <OrderCard key={order.id} order={order} />)}</div>
               )}
             </div>
 
             {inProgress.length > 0 && (
               <div className="bg-white rounded-2xl p-6 shadow-sm">
                 <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>In Progress</h2>
-                <div className="flex flex-col gap-3">{inProgress.map(order => <OrderCard key={order.id} order={order} />)}</div>
+                <div className="flex flex-col gap-3">{sortOrders(inProgress).map(order => <OrderCard key={order.id} order={order} />)}</div>
               </div>
             )}
           </div>
@@ -1263,7 +1987,7 @@ async function triggerEmergencyPause() {
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>All Orders</h2>
             {orders.length === 0 ? <p className="text-center py-8" style={{ color: '#5c3d2e' }}>No orders yet</p> : (
-              <div className="flex flex-col gap-3">{orders.map(order => <OrderCard key={order.id} order={order} />)}</div>
+              <div className="flex flex-col gap-3">{sortOrders(orders).map(order => <OrderCard key={order.id} order={order} />)}</div>
             )}
           </div>
         )}
@@ -1292,6 +2016,19 @@ async function triggerEmergencyPause() {
                   </div>
                   {!baker?.stripe_account_id && <button onClick={connectStripe} className="px-4 py-2 rounded-lg text-white text-xs font-semibold" style={{ backgroundColor: '#635bff' }}>Connect</button>}
                 </div>
+                {!baker?.stripe_account_id && (
+                  <div className="mt-3 p-3 rounded-lg" style={{ backgroundColor: '#faf8f6', border: '1px solid #5c3d2e' }}>
+                    <p className="text-xs leading-relaxed mb-2" style={{ color: '#5c3d2e' }}>Stripe will ask for your website during setup. Use your Whiskly profile link as your website:</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium flex-1 truncate" style={{ color: '#2d1a0e' }}>https://www.whiskly.co/bakers/{baker?.id}</span>
+                      <button onClick={copyStripeUrl}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg flex-shrink-0"
+                        style={{ backgroundColor: '#5c3d2e', color: 'white' }}>
+                        {copiedStripeUrl ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="p-4 rounded-xl border" style={{ borderColor: '#e0d5cc', backgroundColor: '#fef9c3' }}>
@@ -1356,6 +2093,23 @@ async function triggerEmergencyPause() {
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{baker?.rush_orders_available ? 'Accepting rush orders' : 'Not accepting rush orders'}</p>
                     <p className="text-xs" style={{ color: '#5c3d2e' }}>Toggle to let customers know your availability</p>
+                  </div>
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Payment Plans</label>
+                <button onClick={async () => {
+                  const newVal = !paymentPlansEnabled
+                  setPaymentPlansEnabled(newVal)
+                  await supabase.from('bakers').update({ payment_plans_enabled: newVal }).eq('id', baker.id)
+                }} className="flex items-center gap-3 p-3 rounded-xl w-full text-left" style={{ backgroundColor: '#f5f0eb' }}>
+                  <div className="w-10 h-6 rounded-full transition-all relative flex-shrink-0" style={{ backgroundColor: paymentPlansEnabled ? '#2d1a0e' : '#e0d5cc' }}>
+                    <div className="w-4 h-4 bg-white rounded-full absolute top-1 transition-all" style={{ left: paymentPlansEnabled ? '22px' : '4px' }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: '#2d1a0e' }}>{paymentPlansEnabled ? 'Offering payment plans for orders over $500' : 'Not offering payment plans'}</p>
+                    <p className="text-xs" style={{ color: '#5c3d2e' }}>Customers with orders over $500 can pay in 3 installments</p>
                   </div>
                 </button>
               </div>
@@ -1583,6 +2337,7 @@ function MessagesTab({ bakerId, bakerUserId, orders }: { bakerId: string, bakerU
   const [messages, setMessages] = useState<any[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
+  const [offPlatformWarning, setOffPlatformWarning] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (bakerId) loadConversations() }, [bakerId])
@@ -1627,12 +2382,34 @@ function MessagesTab({ bakerId, bakerUserId, orders }: { bakerId: string, bakerU
     await supabase.from('messages').update({ read_at: new Date().toISOString() }).eq('order_id', orderId).eq('receiver_id', bakerUserId).is('read_at', null)
   }
 
+  function detectOffPlatformPattern(text: string): string | null {
+    const lower = text.toLowerCase()
+    if (/(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/.test(text)) return 'phone number'
+    if (/[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(text)) return 'email address'
+    if (/@[a-zA-Z0-9_]{2,}/.test(text)) return '@handle'
+    const phrases = ['venmo', 'zelle', 'cash app', 'cashapp', 'paypal', 'apple pay', 'applepay', 'text me', 'call me', 'my number', 'my email', 'reach me', 'contact me outside', 'dm me', 'direct message', 'whatsapp', 'telegram', 'snapchat']
+    for (const phrase of phrases) { if (lower.includes(phrase)) return `"${phrase}"` }
+    return null
+  }
+
   async function sendMessage() {
     if (!newMessage.trim() || !activeOrderId || !activeOrder) return
     setSending(true)
+    const msgContent = newMessage.trim()
+    const pattern = detectOffPlatformPattern(msgContent)
     const { data: customerData } = await supabase.from('customers').select('user_id').eq('email', activeOrder.customer_email).maybeSingle()
-    await supabase.from('messages').insert({ sender_id: bakerUserId, receiver_id: customerData?.user_id || null, baker_id: bakerId, order_id: activeOrderId, content: newMessage.trim() })
-    setNewMessage(''); setSending(false); loadConversations()
+    await supabase.from('messages').insert({
+      sender_id: bakerUserId,
+      receiver_id: customerData?.user_id || null,
+      baker_id: bakerId,
+      order_id: activeOrderId,
+      content: msgContent,
+      ...(pattern ? { is_flagged: true, flagged_reason: pattern } : {}),
+    })
+    setNewMessage('')
+    setSending(false)
+    if (pattern) setOffPlatformWarning(pattern)
+    loadConversations()
   }
 
   function formatDate(ts: string) {
@@ -1698,6 +2475,15 @@ function MessagesTab({ bakerId, bakerUserId, orders }: { bakerId: string, bakerU
               })}
               <div ref={messagesEndRef} />
             </div>
+            {offPlatformWarning && (
+              <div className="px-4 pt-3 pb-0">
+                <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl border text-xs" style={{ borderColor: '#fbbf24', backgroundColor: '#fffbeb', color: '#92400e' }}>
+                  <span className="flex-shrink-0 mt-0.5">⚠</span>
+                  <span className="flex-1">Your message may contain {offPlatformWarning}. For your protection, please keep all communication and payments on Whiskly.</span>
+                  <button onClick={() => setOffPlatformWarning(null)} className="flex-shrink-0 font-bold ml-1" style={{ color: '#92400e' }}>✕</button>
+                </div>
+              </div>
+            )}
             <div className="p-4 border-t flex gap-3" style={{ borderColor: '#e0d5cc' }}>
               <input value={newMessage} onChange={e => setNewMessage(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()} placeholder="Type a message..." className="flex-1 px-4 py-2 rounded-xl border text-sm" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6', color: '#2d1a0e' }} />
               <button onClick={sendMessage} disabled={sending || !newMessage.trim()} className="px-5 py-2 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: '#2d1a0e', opacity: (sending || !newMessage.trim()) ? 0.7 : 1 }}>Send</button>
