@@ -45,19 +45,61 @@ Whiskly reserves the right to suspend or terminate any account at its discretion
 - You agree to communicate respectfully with bakers through the Platform.`
   },
   {
-    title: '6. Payments',
-    content: `Payments on Whiskly are processed through Stripe, a third-party payment processor. By making a payment, you agree to Stripe's terms of service. Whiskly does not store your full payment card details.
+    title: '6. Fees and Commission',
+    content: `6.1 Phase 1 Pricing (Current)
 
-Payment Schedule:
-- Deposit (50%): Charged at the time a customer confirms an order. This secures the baker and initiates production.
-- Ingredient Advance: 72 hours after order confirmation, Whiskly releases 25% of the total order value directly to the baker to cover ingredient costs. This amount is non-refundable once released.
-- Balance (50%): Automatically charged to the customer's saved payment method 3 days before the event date.
+During Phase 1, bakers pay no commission and no monthly fee to Whiskly. Customers pay a $4.99 platform fee at checkout, in addition to the order price set by the baker. Bakers receive 100% of their listed order price, less standard payment processing fees passed through from Stripe.
 
-Whiskly charges a platform commission on baker payouts: 10% for standard bakers and 7% for Pro bakers. An additional 5% of each payout is held in a reserve balance and released annually. All prices on the Platform are set by bakers. Whiskly does not control baker pricing.
+Standard payouts (2 business days) are free. Instant payouts (within minutes) carry a 1% fee, passed through directly from Stripe with no markup from Whiskly.
 
-Instant Payouts: Bakers who have completed 20 or more orders with no unresolved disputes may enable instant payouts. A 1% fee applies to instant payouts, deducted from the baker's payout.
+6.2 Phase 2 Pricing (Future)
 
-Failed Payments: If a customer's payment fails, the customer has 48 hours to update their payment method. If the payment is not resolved within 48 hours, the order will be automatically cancelled. The ingredient advance already transferred to the baker is non-refundable and serves as a kill fee for the baker's preparation costs.`
+Commission will activate for an individual baker when the first of the following conditions is met:
+
+(a) The baker's Whiskly-sourced orders exceed 40% of their total platform order volume over a rolling 90-day period; or
+
+(b) Eighteen (18) months have elapsed since the baker's account activation date.
+
+For purposes of this Section, an order is "Whiskly-sourced" if (i) the customer discovered the baker through Whiskly's discovery features (browse, search, category pages, or platform recommendations) and (ii) the customer had no prior order relationship with the baker on the Whiskly platform.
+
+When commission activates, bakers may select one of three tiers:
+
+Tier          Monthly Fee     Commission
+Free          $0              10% per order
+Pro           $19/month       7% per order
+Elite         $34/month       5% per order
+
+Bakers will default to the Free tier and may upgrade or downgrade at any time. Tier changes take effect at the start of the next billing cycle.
+
+6.3 Notice of Commission Activation
+
+Whiskly will provide written notice to a baker at least sixty (60) days before commission activates for that baker. Notice will include the activation date, the baker's current tier (Free by default), instructions for upgrading or downgrading, and a summary of the baker's recent platform activity supporting the activation.
+
+6.4 Early Activation Provision
+
+Whiskly reserves the right to activate commission across all baker accounts earlier than the conditions in Section 6.2 if necessary to maintain platform operations. In the event of early activation, Whiskly will:
+
+(a) Provide at least ninety (90) days written notice to all affected bakers;
+
+(b) Apply a discounted commission rate of 5% across all tiers for the first six (6) months following early activation; and
+
+(c) Honor any tier-pricing locks held by Founding Bakers as defined in Section 6.5.
+
+This provision is reserved for genuine operational necessity and is not the planned activation path.
+
+6.5 Founding Baker Provisions
+
+Bakers who join during the Founding Baker period (the first 10 baker accounts approved on the Whiskly platform) receive the following lifetime benefits:
+
+(a) Permanent featured placement in browse search results;
+
+(b) When commission activates, the first twelve (12) months of Pro or Elite tier are provided free of monthly fee (commission rate still applies); and
+
+(c) Locked-in tier monthly fees ($19/month Pro, $34/month Elite) for the lifetime of the account, even if Whiskly raises tier pricing for new bakers in the future.
+
+6.6 Changes to Fee Structure
+
+Whiskly may modify the customer platform fee, commission rates, or tier monthly fees from time to time. Any change to baker-paid fees (commission rates or tier monthly fees) will be communicated to bakers in writing at least sixty (60) days before taking effect, except as provided in Section 6.4. Changes to the customer platform fee will be communicated through the Whiskly website and may take effect upon publication.`
   },
   {
     title: '7. Cancellation and Refund Policy',
@@ -135,11 +177,7 @@ IN NO EVENT SHALL WHISKLY'S TOTAL LIABILITY TO YOU EXCEED THE GREATER OF (A) THE
 You waive any right to participate in a class action lawsuit or class-wide arbitration.`
   },
   {
-    title: '14. Beta Period',
-    content: `Whiskly is currently in beta. During the beta period, features may change, be added, or be removed without notice. Transaction fees for bakers are waived during the beta period. Whiskly will provide reasonable notice before introducing any fees.`
-  },
-  {
-    title: '15. Contact',
+    title: '14. Contact',
     content: `For questions about these Terms, please contact us at support@whiskly.co.`
   },
 ]
@@ -158,7 +196,7 @@ export default function TermsPage() {
           Terms of Service
         </h1>
         <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>
-          Last updated: March 2026
+          Last Updated: May 8, 2026
         </p>
         <p className="text-sm mb-12 leading-relaxed" style={{ color: '#5c3d2e' }}>
           Please read these Terms of Service carefully before using Whiskly. These Terms govern your use of our platform as both a customer and a baker.
@@ -209,7 +247,7 @@ export default function TermsPage() {
               <p className="font-semibold text-white mb-3">Bakers</p>
               <div className="flex flex-col gap-2" style={{ color: '#c4a882' }}>
                 <Link href="/for-bakers">For Bakers</Link>
-                <Link href="/join">Join as Baker</Link>
+                <Link href="/join">Apply as a Baker</Link>
               </div>
             </div>
             <div>
@@ -223,7 +261,7 @@ export default function TermsPage() {
           </div>
         </div>
         <p className="text-sm border-t pt-6" style={{ color: '#c4a882', borderColor: '#4a2e1a', maxWidth: '1280px', margin: '0 auto' }}>
-          © 2026 Whiskly. All rights reserved. · Currently in Beta · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
+          © 2026 Whiskly. All rights reserved. · Early Access · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
         </p>
       </footer>
     </main>

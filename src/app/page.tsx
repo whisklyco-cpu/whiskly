@@ -10,28 +10,16 @@ export default function Home() {
   const [loaded, setLoaded] = useState(false)
   const [featuredBaker, setFeaturedBaker] = useState<any>(null)
   const [zip, setZip] = useState('')
-const [stats, setStats] = useState({ orders: 0, bakers: 0, revenue: 0 })
 
   useEffect(() => {
     setTimeout(() => setLoaded(true), 100)
-    async function loadStats() {
-  const [ordersRes, bakersRes] = await Promise.all([
-    supabase.from('orders').select('id, amount_total, budget, deposit_paid_at', { count: 'exact' }),
-    supabase.from('bakers').select('id', { count: 'exact' }).eq('is_active', true).eq('profile_complete', true),
-  ])
-  const orders = ordersRes.data || []
-  const totalOrders = ordersRes.count || 0
-  const totalBakers = bakersRes.count || 0
-  const totalRevenue = orders.filter(o => o.deposit_paid_at).reduce((sum, o) => sum + (o.amount_total || (o.budget * 100) || 0), 0) / 100
-  setStats({ orders: totalOrders, bakers: totalBakers, revenue: totalRevenue })
-}
-loadStats()
     async function loadFeatured() {
       const { data } = await supabase
         .from('bakers')
         .select('id, business_name, city, state, specialties, profile_photo_url')
         .eq('is_active', true)
         .eq('profile_complete', true)
+        .or('is_listed.eq.true,is_listed.is.null')
         .limit(1)
         .maybeSingle()
       setFeaturedBaker(data)
@@ -99,21 +87,23 @@ loadStats()
   <Link href="/signup" className="px-6 py-3 rounded-xl font-semibold text-sm text-white"
     style={{ backgroundColor: '#8B4513' }}>Create Account →</Link>
   <Link href="/join" className="px-6 py-3 rounded-xl font-semibold text-sm border"
-    style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Become a Baker</Link>
+    style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Apply as a Baker</Link>
 </div>
 
-            {/* Stats */}
-            <div className="flex gap-6 mt-8 pt-6 border-t" style={{ borderColor: '#e0d5cc' }}>
-              {[
-  [stats.orders > 0 ? stats.orders + '+' : '0', 'Orders Placed'],
-  [stats.bakers > 0 ? stats.bakers + '+' : '0', 'Local Bakers'],
-  [stats.revenue > 0 ? '$' + (stats.revenue >= 1000 ? (stats.revenue / 1000).toFixed(1) + 'K' : stats.revenue.toFixed(0)) : '$0', 'Revenue Generated']
-].map(([num, label]) => (
-  <div key={label as string}>
-    <p className="text-xl md:text-2xl font-bold" style={{ color: '#2d1a0e' }}>{num}</p>
-    <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{label}</p>
-  </div>
-))}
+            {/* Early Access */}
+            <div className="mt-8 pt-6 border-t" style={{ borderColor: '#e0d5cc' }}>
+              <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold mb-3"
+                style={{ backgroundColor: '#e8ddd4', color: '#2d1a0e' }}>Early Access</span>
+              <p className="text-base font-bold mb-1" style={{ color: '#2d1a0e' }}>We're hand-selecting our first bakers.</p>
+              <p className="text-sm mb-4 leading-relaxed" style={{ color: '#5c3d2e' }}>
+                Whiskly is open to a limited number of founding bakers and customers ready to book. No waitlist. Just apply.
+              </p>
+              <div className="flex gap-3 flex-wrap">
+                <Link href="/join" className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white"
+                  style={{ backgroundColor: '#8B4513' }}>Apply as a Baker</Link>
+                <Link href="/bakers" className="px-5 py-2.5 rounded-xl font-semibold text-sm border"
+                  style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>Browse Bakers</Link>
+              </div>
             </div>
           </div>
 
@@ -158,7 +148,7 @@ loadStats()
             <div className="absolute bg-white rounded-2xl px-4 py-3 shadow-xl"
               style={{ top: '-16px', right: '-16px', animation: 'float 6s ease-in-out infinite', animationDelay: '2s', opacity: loaded ? 1 : 0, transition: 'opacity 1s', transitionDelay: '700ms' }}>
               <p className="text-xs font-bold" style={{ color: '#2d1a0e' }}>✓ Verified Platform</p>
-              <p className="text-xs" style={{ color: '#5c3d2e' }}>Trusted by local bakers</p>
+              <p className="text-xs" style={{ color: '#5c3d2e' }}>Built for local bakers. Ready for early access.</p>
             </div>
           </div>
 
@@ -242,7 +232,7 @@ loadStats()
               <p className="font-semibold text-white mb-3">Bakers</p>
               <div className="flex flex-col gap-2" style={{ color: '#c4a882' }}>
                 <Link href="/for-bakers">For Bakers</Link>
-                <Link href="/join">Join as Baker</Link>
+                <Link href="/join">Apply as a Baker</Link>
                 <Link href="/login">Sign In</Link>
               </div>
             </div>
@@ -257,7 +247,7 @@ loadStats()
           </div>
         </div>
         <p className="text-sm border-t pt-6" style={{ color: '#c4a882', borderColor: '#4a2e1a', maxWidth: '1280px', margin: '0 auto' }}>
-          © 2026 Whiskly. All rights reserved. · Currently in Beta · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
+          © 2026 Whiskly. All rights reserved. · Early Access · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
         </p>
       </footer>
 

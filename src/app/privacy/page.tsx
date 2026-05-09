@@ -13,9 +13,11 @@ Account Information: When you create an account, we collect your name, email add
 
 Order Information: When you place or fulfill an order, we collect details about the order including event type, event date, budget, item description, delivery address, and any inspiration photos you upload.
 
-Payment Information: Payments are processed through Stripe. Whiskly does not store your full payment card details. We receive limited transaction data from Stripe including the last four digits of your card and transaction amounts. For bakers, Whiskly stores your Stripe Connect account ID to facilitate payouts. Whiskly maintains a reserve balance record per baker (5% of each payout) in our system, separate from Stripe.
+Financial Information: When you connect a payment method or Stripe account to Whiskly, we collect and store the minimum information necessary to process payments, including your name, billing address, and the last four digits of your payment method. Full payment details are stored by Stripe, our payment processor, not by Whiskly. Bakers receive payouts directly from Stripe on a standard 2-business-day schedule. Whiskly does not hold baker funds in reserve.
 
 Communications: We store messages sent between customers and bakers through the Platform in order to facilitate order management and dispute resolution.
+
+Attribution Data: We track the source through which you first arrived at the Platform (for example, organic search, direct visit, or a baker's referral link) using a first-touch attribution cookie. We also record the entry path of each session within the Platform (for example, whether a customer reached a baker's profile through the browse page, a search result, or a direct link). This data is used to calculate Platform attribution metrics that determine commission activation under our Terms of Service. Bakers can view aggregated attribution metrics for their own profile in their dashboard.
 
 Usage Data: We may collect information about how you use the Platform, including pages visited, features used, and actions taken.`
   },
@@ -55,7 +57,7 @@ Order records may be retained for up to 7 years for tax and legal compliance pur
   },
   {
     title: '5. Cookies and Tracking',
-    content: `Whiskly uses cookies and similar technologies to maintain your session, remember your preferences, and analyze Platform usage. You can control cookie settings through your browser, but disabling cookies may affect Platform functionality.
+    content: `Whiskly uses cookies and similar technologies to maintain your session, remember your preferences, analyze Platform usage, and track referral sources for attribution purposes. You can control cookie settings through your browser, but disabling cookies may affect Platform functionality, including the proper attribution of orders to baker referral links.
 
 We do not use third-party advertising cookies or share your data with advertising networks.`
   },
@@ -105,7 +107,7 @@ export default function PrivacyPage() {
           Privacy Policy
         </h1>
         <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>
-          Last updated: March 2026
+          Last Updated: May 8, 2026
         </p>
         <p className="text-sm mb-12 leading-relaxed" style={{ color: '#5c3d2e' }}>
           This Privacy Policy explains how Whiskly LLC collects, uses, and protects your personal information when you use the Whiskly platform.
@@ -156,7 +158,7 @@ export default function PrivacyPage() {
               <p className="font-semibold text-white mb-3">Bakers</p>
               <div className="flex flex-col gap-2" style={{ color: '#c4a882' }}>
                 <Link href="/for-bakers">For Bakers</Link>
-                <Link href="/join">Join as Baker</Link>
+                <Link href="/join">Apply as a Baker</Link>
               </div>
             </div>
             <div>
@@ -170,7 +172,7 @@ export default function PrivacyPage() {
           </div>
         </div>
         <p className="text-sm border-t pt-6" style={{ color: '#c4a882', borderColor: '#4a2e1a', maxWidth: '1280px', margin: '0 auto' }}>
-          © 2026 Whiskly. All rights reserved. · Currently in Beta · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
+          © 2026 Whiskly. All rights reserved. · Early Access · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
         </p>
       </footer>
     </main>

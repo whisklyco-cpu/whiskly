@@ -7,7 +7,6 @@ import Navbar from '@/components/Navbar'
 import { supabase } from '@/lib/supabase'
 
 export default function ForBakersPage() {
-  const [annual, setAnnual] = useState(false)
   const [bakerCount, setBakerCount] = useState(0)
   const [orderCount, setOrderCount] = useState(0)
   const [revenue, setRevenue] = useState(0)
@@ -30,7 +29,6 @@ export default function ForBakersPage() {
     loadStats()
   }, [])
 
-  // Dynamic social proof based on real numbers
   function getSocialProof() {
     if (!statsLoaded) return null
     if (bakerCount >= 25) {
@@ -78,58 +76,6 @@ export default function ForBakersPage() {
     },
   ]
 
-  const freeFeatures = [
-    'Full order management dashboard',
-    'Customer messaging',
-    'Inspiration photo uploads',
-    'Delivery and pickup flow with proof photos',
-    'Customer reviews',
-    'Per-specialty pricing display',
-    'Event countdowns',
-    'Unlimited orders',
-  ]
-
-  const proFeatures = [
-    { name: 'Featured placement in browse results', desc: 'Show up first when customers search' },
-    { name: 'Verified badge', desc: 'Stand out as a trusted, vetted baker' },
-    { name: '10 portfolio photos', desc: 'Free tier includes 3' },
-    { name: 'Send Reminder', desc: 'Nudge customers about upcoming events' },
-    { name: 'Profile writing assistance', desc: 'Get a polished bio and specialty descriptions written for you' },
-    { name: 'Pricing calculator', desc: 'See what bakers in your area charge and price with confidence' },
-    { name: 'Analytics dashboard', desc: 'Profile views, request volume, and conversion rate' },
-    { name: 'Custom booking link', desc: 'whiskly.co/bakers/yourname, perfect for your Instagram bio' },
-    { name: 'Pro Baker badge on order emails', desc: 'Every confirmation email shows your Pro status' },
-    { name: 'Priority support', desc: 'Get help faster when you need it' },
-    { name: 'Founding Baker badge', desc: 'Exclusive, first 50 Pro members only' },
-  ]
-
-  const howItWorks = [
-    { num: '01', title: 'Create your profile', desc: 'Add your specialties, pricing, portfolio photos, and bio. Takes about 10 minutes.' },
-    { num: '02', title: 'Share your link', desc: 'Post your Whiskly profile on Instagram, Facebook, or anywhere you promote your business.' },
-    { num: '03', title: 'Receive structured requests', desc: 'Customers fill out a detailed request form with event date, budget, and inspiration photos. No more vague DMs.' },
-    { num: '04', title: 'Accept or decline', desc: 'Review every request before committing. Only take orders that work for you.' },
-    { num: '05', title: 'Get paid and deliver', desc: 'Manage the whole order in one place, from deposit to delivery confirmation.' },
-  ]
-
-  const whyWhiskly = [
-    {
-      title: 'You set the terms',
-      body: 'Your pricing is public. Customers know what to expect before they reach out. No more explaining your rates from scratch on every inquiry.'
-    },
-    {
-      title: 'Serious customers only',
-      body: 'The order form requires an event date, budget, servings, and inspiration photos. Casual browsers self-select out. Only real buyers make it to your inbox.'
-    },
-    {
-      title: 'Your business, protected',
-      body: 'Deposits collected upfront. Delivery proof photos. Order history saved. If anything ever goes sideways, you have documentation.'
-    },
-    {
-      title: 'Built by someone who gets it',
-      body: 'This platform was built by an independent baker. Every feature exists because it solved a real problem, not because a tech company guessed what bakers need.'
-    },
-  ]
-
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
       <Navbar />
@@ -143,11 +89,11 @@ export default function ForBakersPage() {
           </div>
           <h1 className="text-5xl md:text-6xl font-bold leading-tight mb-6"
             style={{ color: '#2d1a0e', letterSpacing: '-0.02em' }}>
-            You didn't start baking<br />
-            <span style={{ color: '#8B4513' }}>to live in your DMs.</span>
+            Built by a baker who got tired of<br />
+            <span style={{ color: '#8B4513' }}>chasing payments and missing orders.</span>
           </h1>
           <p className="text-lg mb-6 leading-relaxed max-w-xl" style={{ color: '#5c3d2e' }}>
-            Whiskly gives independent bakers a professional home to manage inquiries, accept orders, and grow their business without the chaos.
+            You make incredible cakes. Whiskly handles everything else: bookings, deposits, customer communication, the calendar. So you can spend your time in the kitchen instead of the DMs.
           </p>
 
           {/* Dynamic social proof block */}
@@ -212,133 +158,95 @@ export default function ForBakersPage() {
         </div>
       </section>
 
-      {/* Why Whiskly */}
+      {/* How Whiskly Works */}
       <section className="py-20" style={{ backgroundColor: '#f5f0eb' }}>
         <div className="px-6 md:px-16" style={{ maxWidth: '1280px', margin: '0 auto' }}>
-          <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>Why Whiskly</p>
-          <h2 className="text-3xl font-bold mb-12" style={{ color: '#2d1a0e', letterSpacing: '-0.02em' }}>
-            Everything your business deserves. Nothing you don't need.
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {whyWhiskly.map((item, i) => (
-              <div key={i} className="bg-white rounded-2xl p-8 shadow-sm">
-                <p className="font-bold text-lg mb-3" style={{ color: '#2d1a0e' }}>{item.title}</p>
-                <p className="text-sm leading-relaxed" style={{ color: '#5c3d2e' }}>{item.body}</p>
-              </div>
-            ))}
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>How it works</p>
+            <h2 className="text-3xl font-bold mb-8" style={{ color: '#2d1a0e', letterSpacing: '-0.02em' }}>
+              Simple for you. Professional for your customers.
+            </h2>
+            <div className="bg-white rounded-2xl p-8 shadow-sm flex flex-col gap-6">
+              <p className="text-base leading-relaxed" style={{ color: '#5c3d2e' }}>
+                Customers find your cakes through Whiskly's browse and search. They book directly through your profile with a structured order form, pay a deposit through the platform, and get clear delivery details. You see the order, accept it, bake the cake. Whiskly handles the rest.
+              </p>
+              <p className="text-base leading-relaxed" style={{ color: '#5c3d2e' }}>
+                You set your prices. You keep your customer relationships. You keep your style. Whiskly is the platform underneath, not a middleman.
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* How It Works */}
+      {/* What It Costs */}
       <section className="py-20" style={{ backgroundColor: 'white' }}>
         <div className="px-6 md:px-16" style={{ maxWidth: '1280px', margin: '0 auto' }}>
-          <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>How it works</p>
-          <h2 className="text-3xl font-bold mb-12" style={{ color: '#2d1a0e', letterSpacing: '-0.02em' }}>
-            Up and running in under 15 minutes.
-          </h2>
-          <div className="flex flex-col gap-6">
-            {howItWorks.map((step, i) => (
-              <div key={i} className="flex items-start gap-6 p-6 rounded-2xl" style={{ backgroundColor: '#faf8f6' }}>
-                <p className="text-3xl font-bold flex-shrink-0" style={{ color: '#e0d5cc' }}>{step.num}</p>
-                <div>
-                  <p className="font-bold mb-1" style={{ color: '#2d1a0e' }}>{step.title}</p>
-                  <p className="text-sm leading-relaxed" style={{ color: '#5c3d2e' }}>{step.desc}</p>
-                </div>
-              </div>
-            ))}
+          <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>Pricing</p>
+          <h2 className="text-3xl font-bold mb-8" style={{ color: '#2d1a0e', letterSpacing: '-0.02em' }}>What it costs</h2>
+          <div className="max-w-2xl bg-white rounded-2xl p-8 shadow-sm border" style={{ borderColor: '#e0d5cc' }}>
+            <p className="text-base leading-relaxed mb-4" style={{ color: '#5c3d2e' }}>
+              Right now, joining Whiskly is free. There's no monthly fee. There's no commission on your orders. You keep 100% of every order price you set.
+            </p>
+            <p className="text-base leading-relaxed mb-4" style={{ color: '#5c3d2e' }}>
+              Customers pay a small $4.99 platform fee at checkout, separate from your order price. That covers Whiskly's operations during this early phase.
+            </p>
+            <p className="text-base leading-relaxed" style={{ color: '#5c3d2e' }}>
+              As Whiskly grows and starts driving meaningful customer volume to your business, we'll introduce tiered pricing so you can choose the level of platform support you want. We'll always give you 60 days written notice before any change, and Founding Bakers lock in the lowest rates for life.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* Free vs Pro */}
+      {/* Founding Baker */}
       <section className="py-20" style={{ backgroundColor: '#f5f0eb' }}>
         <div className="px-6 md:px-16" style={{ maxWidth: '1280px', margin: '0 auto' }}>
-          <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>Pricing</p>
-          <h2 className="text-3xl font-bold mb-3" style={{ color: '#2d1a0e', letterSpacing: '-0.02em' }}>
-            Start free. Grow with Pro.
-          </h2>
-          <p className="text-sm mb-10" style={{ color: '#5c3d2e' }}>Every tool you need to run your business is free. Pro is for bakers ready to grow faster.</p>
-
-          <div className="flex items-center gap-3 mb-10">
-            <span className="text-sm font-semibold" style={{ color: annual ? '#5c3d2e' : '#2d1a0e' }}>Monthly</span>
-            <button onClick={() => setAnnual(!annual)}
-              className="w-12 h-6 rounded-full relative transition-all"
-              style={{ backgroundColor: annual ? '#2d1a0e' : '#e0d5cc' }}>
-              <div className="w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all"
-                style={{ left: annual ? '26px' : '2px' }} />
-            </button>
-            <span className="text-sm font-semibold" style={{ color: annual ? '#2d1a0e' : '#5c3d2e' }}>
-              Annual <span className="text-xs px-2 py-0.5 rounded-full ml-1" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>Save 43%</span>
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-2xl p-8 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: '#5c3d2e' }}>Free</p>
-              <p className="text-4xl font-bold mb-1" style={{ color: '#2d1a0e' }}>$0</p>
-              <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>Forever. No credit card needed.</p>
-              <p className="text-xs mb-8 px-3 py-2 rounded-lg" style={{ backgroundColor: '#f5f0eb', color: '#5c3d2e' }}>
-                10% commission per order. You keep 90%.
-              </p>
-              <div className="flex flex-col gap-3 mb-8">
-                {freeFeatures.map((f, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-bold text-white" style={{ backgroundColor: '#2d1a0e' }}>✓</span>
-                    <p className="text-sm" style={{ color: '#2d1a0e' }}>{f}</p>
-                  </div>
-                ))}
-              </div>
-              <Link href="/join" className="block text-center py-3 rounded-xl border font-semibold text-sm"
-                style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
-                Get Started Free
-              </Link>
-            </div>
-
-            <div className="rounded-2xl p-8 shadow-sm relative overflow-hidden" style={{ backgroundColor: '#2d1a0e' }}>
-              <div className="absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: '#8B4513', color: 'white' }}>
-                Most Popular
-              </div>
-              <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: '#c4a882' }}>Pro</p>
-              <div className="flex items-end gap-2 mb-1">
-                <p className="text-4xl font-bold text-white">{annual ? '$199' : '$29'}</p>
-                <p className="text-sm mb-1" style={{ color: '#c4a882' }}>{annual ? '/year' : '/month'}</p>
-              </div>
-              {annual && <p className="text-xs mb-1" style={{ color: '#c4a882' }}>That's just $16.58/month</p>}
-              <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#c4a882' }}>
-                7% commission per order. You keep 93%.
-              </p>
-
-              <div className="mb-3 p-3 rounded-xl" style={{ backgroundColor: 'rgba(139,69,19,0.3)', border: '1px solid rgba(139,69,19,0.5)' }}>
-                <p className="text-xs font-bold text-white">Founding Baker — First 50 only</p>
-                <p className="text-xs mt-0.5" style={{ color: '#e0c9b0' }}>{annual ? '$149/year' : '$19/month'} locked in forever plus exclusive Founding Baker badge</p>
-              </div>
-
-              <p className="text-sm mb-6" style={{ color: '#c4a882' }}>Everything in Free, plus:</p>
-              <div className="flex flex-col gap-3 mb-8">
-                {proFeatures.map((f, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-bold text-white" style={{ backgroundColor: '#8B4513' }}>✓</span>
-                    <div>
-                      <p className="text-sm font-semibold text-white">{f.name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: '#c4a882' }}>{f.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <Link href="/join?plan=pro" className="block text-center py-3 rounded-xl font-semibold text-sm"
-                style={{ backgroundColor: '#8B4513', color: 'white' }}>
-                Apply for Pro
-              </Link>
-            </div>
-          </div>
-
-          <div className="mt-6 p-5 rounded-2xl text-center" style={{ backgroundColor: 'white' }}>
-            <p className="text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>When does Pro pay for itself?</p>
-            <p className="text-sm" style={{ color: '#5c3d2e' }}>
-              At 10% commission you break even on Pro at around $290/month in orders. Most bakers hit that in their first week.
-              At $1,000/month in orders, Pro saves you $30. At $3,000/month, it saves you $90.
+          <div className="rounded-2xl p-10 md:p-12 shadow-sm" style={{ backgroundColor: '#2d1a0e' }}>
+            <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>Founding Baker — First 10 only</p>
+            <h2 className="text-2xl md:text-3xl font-bold text-white mb-5" style={{ letterSpacing: '-0.02em' }}>
+              The first 10 bakers on Whiskly become Founding Bakers.
+            </h2>
+            <p className="text-base mb-8 max-w-xl" style={{ color: '#c4a882' }}>
+              The benefits are permanent and locked in for the lifetime of your account.
             </p>
+            <div className="flex flex-col gap-3 mb-10">
+              {[
+                'Featured placement in browse results, forever',
+                'Locked-in tier pricing for life ($19/mo Pro, $34/mo Elite)',
+                '12 months of Pro or Elite tier free when commission activates',
+                'Direct input on platform features through monthly founder calls',
+                'Founding Baker badge on your profile',
+              ].map((benefit, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-bold text-white" style={{ backgroundColor: '#8B4513' }}>✓</span>
+                  <p className="text-sm text-white">{benefit}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-sm mb-8" style={{ color: '#c4a882' }}>
+              Once we hit 10 Founding Bakers, this offer closes permanently.
+            </p>
+            <Link href="/join"
+              className="inline-block px-10 py-4 rounded-xl font-semibold text-sm"
+              style={{ backgroundColor: '#8B4513', color: 'white' }}>
+              Apply as a Baker
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Why We Built It This Way */}
+      <section className="py-20" style={{ backgroundColor: 'white' }}>
+        <div className="px-6 md:px-16" style={{ maxWidth: '1280px', margin: '0 auto' }}>
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>Why we built it this way</p>
+            <div className="bg-white rounded-2xl p-8 shadow-sm border" style={{ borderColor: '#e0d5cc' }}>
+              <p className="text-base leading-relaxed mb-4" style={{ color: '#5c3d2e' }}>
+                Whiskly only earns when we earn for you. Your customer fee covers our operations during this early phase. Commission only activates when at least 40% of your orders come from customers Whiskly brought you, or after 18 months on the platform, whichever comes first.
+              </p>
+              <p className="text-base leading-relaxed font-semibold" style={{ color: '#2d1a0e' }}>
+                That means we're not extracting from your existing business. We're building something that grows with you.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -346,22 +254,10 @@ export default function ForBakersPage() {
       {/* Final CTA */}
       <section className="px-6 md:px-16 py-20" style={{ maxWidth: '1280px', margin: '0 auto' }}>
         <div className="rounded-2xl p-12 text-center" style={{ backgroundColor: '#2d1a0e' }}>
-          <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>
-            {bakerCount >= 25 ? 'Join ' + bakerCount + ' bakers' : bakerCount >= 5 ? 'Early access open' : 'Now accepting applications'}
-          </p>
-          <h2 className="text-3xl font-bold text-white mb-4" style={{ letterSpacing: '-0.02em' }}>
-            {bakerCount >= 25
-              ? 'Your next customer is already looking for you.'
-              : bakerCount >= 5
-              ? 'Be one of the first bakers on the platform.'
-              : 'Get in early. Shape the platform.'}
-          </h2>
+          <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>Now accepting applications</p>
+          <h2 className="text-3xl font-bold text-white mb-4" style={{ letterSpacing: '-0.02em' }}>Ready to apply? It takes about 10 minutes.</h2>
           <p className="text-sm mb-8 max-w-md mx-auto" style={{ color: '#c4a882' }}>
-            {bakerCount >= 25
-              ? 'Join Whiskly and give your business the professional home it deserves. Free to start, forever.'
-              : bakerCount >= 5
-              ? 'We are intentionally keeping early access small. Bakers who join now get the most attention, the best placement, and the Founding Baker rate locked in forever.'
-              : 'We are hand-selecting our first bakers. Early members get direct input on features, Founding Baker pricing locked in forever, and first placement when customers search.'}
+            We're hand-selecting our first bakers. Founding Baker spots are limited to 10, and they're filling.
           </p>
           <Link href="/join"
             className="inline-block px-10 py-4 rounded-xl font-semibold text-sm"
@@ -389,7 +285,7 @@ export default function ForBakersPage() {
               <p className="font-semibold text-white mb-3">Bakers</p>
               <div className="flex flex-col gap-2" style={{ color: '#c4a882' }}>
                 <Link href="/for-bakers">For Bakers</Link>
-                <Link href="/join">Join as Baker</Link>
+                <Link href="/join">Apply as a Baker</Link>
                 <Link href="/login">Sign In</Link>
               </div>
             </div>
@@ -404,7 +300,7 @@ export default function ForBakersPage() {
           </div>
         </div>
         <p className="text-sm border-t pt-6" style={{ color: '#c4a882', borderColor: '#4a2e1a', maxWidth: '1280px', margin: '0 auto' }}>
-          © 2026 Whiskly. All rights reserved. · Currently in Beta · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
+          © 2026 Whiskly. All rights reserved. · Early Access · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
         </p>
       </footer>
     </main>

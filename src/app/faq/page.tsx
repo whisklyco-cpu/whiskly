@@ -47,12 +47,24 @@ const faqs = [
         a: 'If something goes wrong with your order, you can file a formal dispute through your dashboard. Orders are locked while a dispute is open and our team reviews the situation within 48 hours. Depending on the outcome, a full or partial refund may be issued.'
       },
       {
+  q: 'Is there a fee to use Whiskly?',
+  a: 'Yes. Whiskly charges a $4.99 platform fee at checkout, added to the order price set by your baker. This covers payment processing, customer support, and the platform you use to book and manage your order. The fee is shown clearly at the booking step before you pay.'
+},
+{
+  q: 'How much of my payment goes to the baker?',
+  a: 'Your baker receives 100% of the order price they set. Whiskly does not take a commission from the baker during this early phase.'
+},
+{
+  q: 'Can I get a refund on the platform fee?',
+  a: 'The $4.99 platform fee is non-refundable once an order is submitted, since it covers the cost of processing your booking. Your deposit and final payment to the baker follow the baker\'s cancellation policy, shown on their profile.'
+},
+{
   q: 'How does the deposit work?',
   a: 'When your baker accepts your order, you will receive a prompt to pay a 50% deposit to confirm. The remaining balance is due 48 hours before your event. You will not be charged anything until your baker accepts.'
 },
 {
   q: 'Is there a platform fee?',
-  a: 'Yes. A 3% platform fee is added at checkout to cover payment processing. This is shown as a line item before you confirm payment so there are no surprises.'
+  a: 'Yes. Whiskly charges a $4.99 platform fee per order, shown as a line item at checkout. This fee covers secure payment processing infrastructure, order management, customer support, and dispute mediation. The platform fee is in addition to the baker\'s listed price. For example, if a baker\'s cake is listed at $150, your subtotal at checkout will be $150 (cake) + $4.99 (Whiskly platform fee) = $154.99, plus any applicable Stripe processing fees, which are also disclosed at checkout. The platform fee is refunded only if your entire order is refunded due to a baker cancellation or no-show.'
 },
 {
   q: 'What if my baker sends a counter offer?',
@@ -122,7 +134,7 @@ const faqs = [
 },
 {
   q: 'What is the emergency rescue roster?',
-  a: 'The emergency rescue roster is an opt-in program for bakers who are willing to take on short-notice orders when another baker has an emergency. You choose which urgency windows you are available for. Pro bakers get priority placement on the roster. Bakers who complete 4 or more emergency assists per year earn a Community Hero badge on their profile.'
+  a: 'The emergency rescue roster is an optional list of bakers who are open to being contacted when another baker cancels last-minute. If you opt in, you may occasionally receive a notification about an urgent open order in your area that needs to be fulfilled quickly. There is no obligation to accept any order — opting in just means you are open to hearing about them.'
 },
 {
   q: 'How does the rush order fee work?',
@@ -130,7 +142,19 @@ const faqs = [
 },
 {
   q: 'What are strikes?',
-  a: 'Strikes are issued for serious violations like ignoring orders, cancelling after a deposit is paid, or disputes ruled against you. You receive a warning at strike 1, a flag at strike 2, and automatic suspension at strike 3. You can appeal any strike by contacting support@whiskly.co within 7 days.'
+  a: 'A strike is a formal warning recorded on your account when you cancel a confirmed order within 7 days of the event date. If you receive 3 strikes, your account will be reviewed and may be suspended. Strikes are visible to Whiskly admins but are never shown to customers.'
+},
+{
+  q: 'How does Whiskly make money?',
+  a: 'Right now, we charge customers a small $4.99 platform fee at checkout. Bakers pay 0% commission. We don\'t take a cut from your order price.\n\nAs Whiskly grows, we activate commission on a per-baker basis when one of two things happens: 40% of your orders come from customers who discovered you through Whiskly (over a rolling 90-day period), or 18 months from when you joined the platform, whichever comes first. When commission activates, you choose your tier (Free at 10%, Pro at $29/month and 7%, or Elite at $34/month and 5%).\n\nYou\'ll always see your Whiskly-sourced percentage in your dashboard, and we give 60 days written notice before commission activates for your account. Founding Bakers (first 50) get the first 12 months of Pro tier free and $19/month Pro pricing locked in for the lifetime of their account.'
+},
+{
+  q: 'What if I never hit 40% Whiskly-sourced orders?',
+  a: 'Commission still activates 18 months after you join, regardless of your Whiskly-sourced percentage. This is a backstop so you have full clarity on the timeline. Most bakers reach 40% naturally as Whiskly grows, but the 18-month cap means there\'s a fixed end date to the 0% commission period either way.'
+},
+{
+  q: 'What counts as a "Whiskly-sourced" order?',
+  a: 'A Whiskly-sourced order is one where the customer found your specific profile through Whiskly\'s discovery features (browse page, search, category pages, or recommendations) AND had no prior order relationship with you on the platform. If a customer was already yours and you sent them your Whiskly link, that order is not Whiskly-sourced. If a customer discovered you because they searched Whiskly for "wedding cake bakers in Baltimore," that order is Whiskly-sourced. We track this automatically and you\'ll see the breakdown in your dashboard.'
 },
     ]
   },
@@ -140,7 +164,7 @@ const faqs = [
     questions: [
       {
         q: 'What areas does Whiskly serve?',
-        a: 'Whiskly is currently in beta and growing. We\'re actively onboarding bakers across the US. If there are no bakers in your area yet, check back soon — we\'re adding new bakers regularly.'
+        a: 'Whiskly is in early access and growing. We\'re actively onboarding bakers across the US. If there are no bakers in your area yet, check back soon — we\'re adding new bakers regularly.'
       },
       {
         q: 'How do I contact support?',
@@ -151,8 +175,8 @@ const faqs = [
         a: 'Yes. All payments are processed through Stripe, one of the most trusted payment platforms in the world. Whiskly never stores your card information directly.'
       },
       {
-        q: 'What is the beta period?',
-        a: 'Whiskly is currently in beta, meaning we\'re actively building and improving the platform. During beta, there are no transaction fees for bakers. We\'ll give plenty of notice before any fees are introduced.'
+        q: 'What is the early access period?',
+        a: 'Whiskly is currently in early access, meaning we\'re actively building and improving the platform. During early access, there are no transaction fees for bakers. We\'ll give plenty of notice before any fees are introduced.'
       },
       {
   q: 'What is the difference between free and Pro for bakers?',
@@ -275,7 +299,7 @@ export default function FAQPage() {
               <p className="font-semibold text-white mb-3">Bakers</p>
               <div className="flex flex-col gap-2" style={{ color: '#c4a882' }}>
                 <Link href="/for-bakers">For Bakers</Link>
-                <Link href="/join">Join as Baker</Link>
+                <Link href="/join">Apply as a Baker</Link>
                 <Link href="/login">Sign In</Link>
               </div>
             </div>
@@ -290,7 +314,7 @@ export default function FAQPage() {
           </div>
         </div>
         <p className="text-sm border-t pt-6" style={{ color: '#c4a882', borderColor: '#4a2e1a', maxWidth: '1280px', margin: '0 auto' }}>
-          © 2026 Whiskly. All rights reserved. · Currently in Beta · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
+          © 2026 Whiskly. All rights reserved. · Early Access · <a href="mailto:support@whiskly.co" className="underline">support@whiskly.co</a>
         </p>
       </footer>
     </main>
