@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 import Navbar from '@/components/Navbar'
 
 const faqs = [
@@ -146,7 +146,7 @@ const faqs = [
 },
 {
   q: 'How does Whiskly make money?',
-  a: 'Right now, we charge customers a small $4.99 platform fee at checkout. Bakers pay 0% commission. We don\'t take a cut from your order price.\n\nAs Whiskly grows, we activate commission on a per-baker basis when one of two things happens: 40% of your orders come from customers who discovered you through Whiskly (over a rolling 90-day period), or 18 months from when you joined the platform, whichever comes first. When commission activates, you choose your tier (Free at 10%, Pro at $29/month and 7%, or Elite at $34/month and 5%).\n\nYou\'ll always see your Whiskly-sourced percentage in your dashboard, and we give 60 days written notice before commission activates for your account. Founding Bakers (first 50) get the first 12 months of Pro tier free and $19/month Pro pricing locked in for the lifetime of their account.'
+  a: 'Right now, we charge customers a small $4.99 platform fee at checkout. Bakers pay 0% commission. We don\'t take a cut from your order price.\n\nAs Whiskly grows, we activate commission on a per-baker basis when one of two things happens: 40% of your orders come from customers who discovered you through Whiskly (over a rolling 90-day period), or 18 months from when you joined the platform, whichever comes first. When commission activates, you choose your tier: Free (10%, no monthly fee), Pro ($19/month, 7%), or Founding ($14/month, 5% — first 50 bakers only, permanently locked).\n\nYou\'ll always see your Whiskly-sourced percentage in your dashboard, and we give 60 days written notice before commission activates for your account. Founding Bakers (first 50) get a permanently locked 5% commission rate and $14/month pricing for the lifetime of their account. Learn more at whiskly.co/founding.'
 },
 {
   q: 'What if I never hit 40% Whiskly-sourced orders?',
@@ -284,7 +284,7 @@ export default function FAQPage() {
       <footer className="px-6 md:px-16 py-12" style={{ backgroundColor: '#2d1a0e' }}>
         <div className="flex flex-col md:flex-row justify-between gap-8 mb-8" style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div className="max-w-xs">
-            <div className="mb-2"><WhisklyLogo variant="dark" size="md" /></div>
+            <div className="mb-2"><Logo size={32} linked={false} className="text-[#f5f0eb]" /></div>
             <p className="text-sm" style={{ color: '#c4a882' }}>Book bakers with confidence. Clear pricing. Structured booking.</p>
           </div>
           <div className="flex gap-16 text-sm">
@@ -299,6 +299,7 @@ export default function FAQPage() {
               <p className="font-semibold text-white mb-3">Bakers</p>
               <div className="flex flex-col gap-2" style={{ color: '#c4a882' }}>
                 <Link href="/for-bakers">For Bakers</Link>
+                <Link href="/founding">Founding Program</Link>
                 <Link href="/join">Apply as a Baker</Link>
                 <Link href="/login">Sign In</Link>
               </div>

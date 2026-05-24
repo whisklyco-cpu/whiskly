@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -51,7 +51,7 @@ export default function ApplicationPendingPage() {
       <div className="w-full max-w-lg text-center">
 
         <div className="mb-8">
-          <Link href="/"><WhisklyLogo variant="horizontal" size="md" /></Link>
+          <Logo size={32} />
         </div>
 
         <div className="bg-white rounded-2xl p-8 md:p-12 shadow-sm">

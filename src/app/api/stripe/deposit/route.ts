@@ -6,6 +6,15 @@ export const dynamic = 'force-dynamic'
 
 const FREE_COMMISSION = 0.10
 const PRO_COMMISSION = 0.07
+const FOUNDING_COMMISSION = 0.05
+
+function getCommissionRate(baker: { tier?: string | null; is_founding_baker?: boolean | null }): number {
+  if (baker?.is_founding_baker) return FOUNDING_COMMISSION
+  if (baker?.tier === 'founding') return FOUNDING_COMMISSION
+  if (baker?.tier === 'pro') return PRO_COMMISSION
+  if (baker?.tier === 'elite') return PRO_COMMISSION // legacy fallback — treat as Pro
+  return FREE_COMMISSION
+}
 
 export async function POST(req: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2026-02-25.clover' })
@@ -18,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     const { data: order } = await supabase
       .from('orders')
-      .select('*, bakers(id, stripe_account_id, tier)')
+      .select('*, bakers(id, stripe_account_id, tier, is_founding_baker)')
       .eq('id', order_id)
       .maybeSingle()
 
@@ -31,7 +40,7 @@ export async function POST(req: NextRequest) {
     // Standard: 50% deposit
     const depositRate = order.payment_plan ? 0.33 : order.budget >= 750 ? 0.60 : 0.50
     const depositCents = Math.round(totalCents * depositRate)
-    const commissionRate = order.bakers?.tier === 'pro' ? PRO_COMMISSION : FREE_COMMISSION
+    const commissionRate = getCommissionRate(order.bakers)
     const depositCommissionCents = Math.round(depositCents * commissionRate)
     const customerDepositCents = depositCents + 299
 

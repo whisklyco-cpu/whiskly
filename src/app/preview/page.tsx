@@ -4,23 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import NavbarPreview from '@/components/NavbarPreview'
-
-// Inline flat beater logo — drop beater-logo.png into /public
-function BeaterLogo({ dark = false }: { dark?: boolean }) {
-  return (
-    <img
-      src="/beater-logo.png"
-      alt="Whiskly"
-      style={{
-        height: '36px',
-        width: 'auto',
-        filter: dark
-          ? 'brightness(0) invert(1) sepia(1) saturate(0.5) hue-rotate(0deg) opacity(0.85)'
-          : 'none',
-      }}
-    />
-  )
-}
+import { Logo } from '@/components/Logo'
 
 export default function HomePreview() {
   const [loaded, setLoaded] = useState(false)
@@ -298,12 +282,12 @@ export default function HomePreview() {
         </div>
       </section>
 
-      {/* Footer — SWAPPED: BeaterLogo instead of WhisklyLogo */}
+      {/* Footer */}
       <footer className="px-5 md:px-16 py-10 md:py-12" style={{ backgroundColor: '#2d1a0e' }}>
         <div className="flex flex-col md:flex-row justify-between gap-8 mb-8" style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div className="max-w-xs">
             <div className="mb-2">
-              <BeaterLogo dark />
+              <Logo size={32} linked={false} className="text-[#f5f0eb]" />
             </div>
             <p className="text-sm" style={{ color: '#c4a882' }}>Book bakers with confidence. Clear pricing. Structured booking.</p>
           </div>

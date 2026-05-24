@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Navbar from '@/components/Navbar'
 import Link from 'next/link'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 
 const CONTACT_TYPES = [
   { value: 'customer_order', label: 'Issue with an order', icon: '📦', audience: 'customer', description: 'Problem with a current or past order' },
@@ -285,7 +285,7 @@ export default function ContactPage() {
       <footer className="px-5 md:px-16 py-10 mt-10" style={{ backgroundColor: '#2d1a0e' }}>
         <div className="flex flex-col md:flex-row justify-between gap-8 mb-8" style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div className="max-w-xs">
-            <div className="mb-2"><WhisklyLogo variant="dark" size="md" /></div>
+            <div className="mb-2"><Logo size={32} linked={false} className="text-[#f5f0eb]" /></div>
             <p className="text-sm" style={{ color: '#c4a882' }}>Book bakers with confidence. Clear pricing. Structured booking.</p>
           </div>
           <div className="flex gap-10 md:gap-16 text-sm flex-wrap">

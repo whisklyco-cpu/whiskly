@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 import Navbar from '@/components/Navbar'
 
 const sections = [
@@ -107,7 +107,7 @@ export default function PrivacyPage() {
           Privacy Policy
         </h1>
         <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>
-          Last Updated: May 8, 2026
+          Last Updated: May 9, 2026
         </p>
         <p className="text-sm mb-12 leading-relaxed" style={{ color: '#5c3d2e' }}>
           This Privacy Policy explains how Whiskly LLC collects, uses, and protects your personal information when you use the Whiskly platform.
@@ -143,7 +143,7 @@ export default function PrivacyPage() {
       <footer className="px-5 md:px-16 py-10 mt-10" style={{ backgroundColor: '#2d1a0e' }}>
         <div className="flex flex-col md:flex-row justify-between gap-8 mb-8" style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div className="max-w-xs">
-            <div className="mb-2"><WhisklyLogo variant="dark" size="md" /></div>
+            <div className="mb-2"><Logo size={32} linked={false} className="text-[#f5f0eb]" /></div>
             <p className="text-sm" style={{ color: '#c4a882' }}>Book bakers with confidence. Clear pricing. Structured booking.</p>
           </div>
           <div className="flex gap-10 md:gap-16 text-sm flex-wrap">
@@ -158,6 +158,7 @@ export default function PrivacyPage() {
               <p className="font-semibold text-white mb-3">Bakers</p>
               <div className="flex flex-col gap-2" style={{ color: '#c4a882' }}>
                 <Link href="/for-bakers">For Bakers</Link>
+                <Link href="/founding">Founding Program</Link>
                 <Link href="/join">Apply as a Baker</Link>
               </div>
             </div>

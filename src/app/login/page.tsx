@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 
 export default function Login() {
   const router = useRouter()
@@ -30,12 +30,20 @@ export default function Login() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: baker } = await supabase
       .from('bakers')
-      .select('id, is_active')
+      .select('id, is_active, onboarding_completed, photo_auth_required, photo_auth_completed_at')
       .eq('user_id', user?.id)
       .maybeSingle()
 
     if (baker) {
-      router.push(baker.is_active ? '/dashboard/baker' : '/application-pending')
+      if (!baker.is_active) {
+        router.push('/application-pending')
+      } else if (baker.photo_auth_required && !baker.photo_auth_completed_at) {
+        router.push('/baker/photo-auth')
+      } else if (!baker.onboarding_completed) {
+        router.push('/onboarding/baker')
+      } else {
+        router.push('/dashboard/baker')
+      }
     } else {
       router.push('/dashboard/customer')
     }
@@ -46,7 +54,7 @@ export default function Login() {
       <div className="w-full max-w-md px-6">
 
         <div className="text-center mb-8">
-          <Link href="/"><WhisklyLogo variant="horizontal" size="md" /></Link>
+          <Logo size={32} />
           <p className="text-sm mt-2" style={{ color: '#5c3d2e' }}>Sign in to your account</p>
         </div>
 

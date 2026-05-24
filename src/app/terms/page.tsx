@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 import Navbar from '@/components/Navbar'
 
 const sections = [
@@ -67,7 +67,7 @@ When commission activates, bakers may select one of three tiers:
 Tier          Monthly Fee     Commission
 Free          $0              10% per order
 Pro           $19/month       7% per order
-Elite         $34/month       5% per order
+Founding      $14/month       5% per order (locked)
 
 Bakers will default to the Free tier and may upgrade or downgrade at any time. Tier changes take effect at the start of the next billing cycle.
 
@@ -89,13 +89,27 @@ This provision is reserved for genuine operational necessity and is not the plan
 
 6.5 Founding Baker Provisions
 
-Bakers who join during the Founding Baker period (the first 10 baker accounts approved on the Whiskly platform) receive the following lifetime benefits:
+Bakers who earn Founding Baker status (defined as one of the first 50 baker accounts approved on the Whiskly platform who complete all three qualification requirements in the Founding Baker Program Specification) receive the following lifetime benefits:
 
-(a) Permanent featured placement in browse search results;
+(a) Permanent featured placement in browse search results, surfacing above non-Founding bakers at the same rating level;
 
-(b) When commission activates, the first twelve (12) months of Pro or Elite tier are provided free of monthly fee (commission rate still applies); and
+(b) Locked subscription pricing of $14 per month or $99 per year for the lifetime of the account, even if Whiskly raises subscription pricing for other tiers in the future;
 
-(c) Locked-in tier monthly fees ($19/month Pro, $34/month Elite) for the lifetime of the account, even if Whiskly raises tier pricing for new bakers in the future.
+(c) Locked commission rate of 5 percent when commission activation begins, for the lifetime of the account, even if Whiskly raises commission rates for other tiers in the future;
+
+(d) First month of subscription provided free of charge;
+
+(e) A permanent Founding Baker number from 1 through 50 displayed on the baker's profile;
+
+(f) A Verified Original Work badge, subject to enhanced photo authentication as described in the Founding Baker Program Specification;
+
+(g) Listing on the permanent Meet Our Founding Bakers page;
+
+(h) Early access to new platform features, a direct founding baker group chat with the founder, a personal 30-minute onboarding call, and first access to corporate and bulk orders before they open to the general baker pool;
+
+(i) A digital welcome kit on day one, and physical merchandise within the first 12 months of the program.
+
+Founding Baker status is non-transferable and may be paused, removed, or forfeited under the conditions described in the Founding Baker Program Specification.
 
 6.6 Changes to Fee Structure
 
@@ -196,7 +210,7 @@ export default function TermsPage() {
           Terms of Service
         </h1>
         <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>
-          Last Updated: May 8, 2026
+          Last Updated: May 9, 2026
         </p>
         <p className="text-sm mb-12 leading-relaxed" style={{ color: '#5c3d2e' }}>
           Please read these Terms of Service carefully before using Whiskly. These Terms govern your use of our platform as both a customer and a baker.
@@ -232,7 +246,7 @@ export default function TermsPage() {
       <footer className="px-5 md:px-16 py-10 mt-10" style={{ backgroundColor: '#2d1a0e' }}>
         <div className="flex flex-col md:flex-row justify-between gap-8 mb-8" style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <div className="max-w-xs">
-            <div className="mb-2"><WhisklyLogo variant="dark" size="md" /></div>
+            <div className="mb-2"><Logo size={32} linked={false} className="text-[#f5f0eb]" /></div>
             <p className="text-sm" style={{ color: '#c4a882' }}>Book bakers with confidence. Clear pricing. Structured booking.</p>
           </div>
           <div className="flex gap-10 md:gap-16 text-sm flex-wrap">
@@ -247,6 +261,7 @@ export default function TermsPage() {
               <p className="font-semibold text-white mb-3">Bakers</p>
               <div className="flex flex-col gap-2" style={{ color: '#c4a882' }}>
                 <Link href="/for-bakers">For Bakers</Link>
+                <Link href="/founding">Founding Program</Link>
                 <Link href="/join">Apply as a Baker</Link>
               </div>
             </div>

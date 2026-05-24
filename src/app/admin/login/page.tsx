@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 
 export default function AdminLogin() {
   const router = useRouter()
@@ -33,7 +33,7 @@ export default function AdminLogin() {
     <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f5f0eb' }}>
       <div className="bg-white rounded-2xl p-8 shadow-sm w-full max-w-sm">
         <div className="flex justify-center mb-6">
-          <WhisklyLogo variant="horizontal" size="md" />
+          <Logo size={32} linked={false} />
         </div>
         <h1 className="text-xl font-bold mb-1 text-center" style={{ color: '#2d1a0e' }}>Admin Sign In</h1>
         <p className="text-sm mb-6 text-center" style={{ color: '#5c3d2e' }}>Whiskly internal access only</p>

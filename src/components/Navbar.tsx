@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -46,13 +46,14 @@ export default function Navbar() {
       <div className="flex items-center justify-between px-5 md:px-8 py-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
-          <WhisklyLogo variant="horizontal" size="sm" />
+          <Logo size={28} linked={false} />
         </Link>
 
         {/* Desktop nav */}
         <div className="hidden md:flex items-center gap-3">
           <Link href="/bakers" className="text-sm font-medium" style={{ color: '#2d1a0e' }}>Browse Bakers</Link>
           <Link href="/for-bakers" className="text-sm font-medium" style={{ color: '#2d1a0e' }}>For Bakers</Link>
+          <Link href="/founding" className="text-sm font-medium" style={{ color: '#8B4513' }}>Founding Program</Link>
           <Link href="/faq" className="text-sm font-medium" style={{ color: '#2d1a0e' }}>FAQ</Link>
 
           {!loading && (
@@ -101,6 +102,7 @@ export default function Navbar() {
             style={{ borderColor: '#e0d5cc', backgroundColor: 'white', top: '100%', zIndex: 1000 }}>
           <Link href="/bakers" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#2d1a0e', borderColor: '#f5f0eb' }}>Browse Bakers</Link>
           <Link href="/for-bakers" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#2d1a0e', borderColor: '#f5f0eb' }}>For Bakers</Link>
+          <Link href="/founding" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#8B4513', borderColor: '#f5f0eb' }}>Founding Program</Link>
           <Link href="/faq" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-3 border-b" style={{ color: '#2d1a0e', borderColor: '#f5f0eb' }}>FAQ</Link>
           <Link href="/contact" className="text-sm font-medium" style={{ color: '#2d1a0e' }}>
   Support

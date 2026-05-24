@@ -9,6 +9,8 @@ export default function BakerOnboarding() {
   const [step, setStep] = useState(1)
   const [agreed, setAgreed] = useState(false)
   const [completing, setCompleting] = useState(false)
+  const [savingAgreement, setSavingAgreement] = useState(false)
+  const [error, setError] = useState('')
   const [baker, setBaker] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -25,14 +27,38 @@ export default function BakerOnboarding() {
     init()
   }, [router])
 
+  async function handleAgreement() {
+    if (!agreed || !baker || savingAgreement) return
+    setSavingAgreement(true)
+    setError('')
+    const { error: dbErr } = await supabase.from('bakers').update({
+      disclosure_acknowledged_at: new Date().toISOString(),
+      disclosure_version_acknowledged: '1.0',
+    }).eq('id', baker.id)
+    if (dbErr) {
+      setError('Could not save your agreement. Please try again.')
+      setSavingAgreement(false)
+      return
+    }
+    setSavingAgreement(false)
+    setStep(3)
+  }
+
   async function handleComplete() {
     if (!baker || completing) return
     setCompleting(true)
+    setError('')
 
-    await supabase.from('bakers').update({
+    const { error: dbErr } = await supabase.from('bakers').update({
       onboarding_completed: true,
       agreed_to_terms: true,
     }).eq('id', baker.id)
+
+    if (dbErr) {
+      setError('Could not save. Please try again.')
+      setCompleting(false)
+      return
+    }
 
     const emailBody = `Hi ${baker.business_name},
 
@@ -48,7 +74,7 @@ In the future, when Whiskly is driving 40% or more of your orders, commission ac
 
 Free: 10% commission, no monthly fee, full order management.
 Pro: 7% commission, $19 a month — priority placement, analytics, social graphics, seasonal campaigns.
-Elite: 5% commission, $34 a month — everything in Pro plus Business Orders portal and brand partnerships.
+Founding: 5% commission, $14 a month — everything in Pro plus permanent locked pricing, Founding Baker badge, and early access to all new features. Available to the first 50 bakers only.
 
 You are never locked in. You can change tiers or leave at any time.
 
@@ -58,7 +84,7 @@ Welcome to Whiskly. We are glad you are here.
 
 — The Whiskly team`
 
-    await fetch('/api/email', {
+    fetch('/api/email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -68,7 +94,7 @@ Welcome to Whiskly. We are glad you are here.
         subject: 'Your Whiskly agreement confirmation',
         body: emailBody,
       }),
-    }).catch(() => {})
+    }).catch(err => console.error('Disclosure confirmation email failed:', err))
 
     router.push('/dashboard/baker')
   }
@@ -136,7 +162,7 @@ Welcome to Whiskly. We are glad you are here.
                   <div className="rounded-xl p-4 flex flex-col gap-2" style={{ backgroundColor: '#f5f0eb' }}>
                     <p><span className="font-semibold" style={{ color: '#2d1a0e' }}>Free:</span> 10% commission, no monthly fee, full order management.</p>
                     <p><span className="font-semibold" style={{ color: '#2d1a0e' }}>Pro:</span> 7% commission, $19 a month — priority placement, analytics, social graphics, seasonal campaigns.</p>
-                    <p><span className="font-semibold" style={{ color: '#2d1a0e' }}>Elite:</span> 5% commission, $34 a month — everything in Pro plus Business Orders portal and brand partnerships.</p>
+                    <p><span className="font-semibold" style={{ color: '#8B4513' }}>Founding:</span> 5% commission, $14 a month — everything in Pro plus permanent locked pricing, Founding Baker badge, and early access to all new features. First 50 bakers only.</p>
                   </div>
                   <p>
                     You are never locked in. You can change tiers or leave at any time.
@@ -159,12 +185,15 @@ Welcome to Whiskly. We are glad you are here.
                 </span>
               </label>
 
+              {error && (
+                <p className="text-sm px-4 py-3 rounded-xl bg-red-50 text-red-700 border border-red-200">{error}</p>
+              )}
               <button
-                onClick={() => { if (agreed) setStep(3) }}
-                disabled={!agreed}
+                onClick={handleAgreement}
+                disabled={!agreed || savingAgreement}
                 className="w-full py-3 rounded-xl text-white font-semibold text-sm"
-                style={{ backgroundColor: '#2d1a0e', opacity: agreed ? 1 : 0.4, cursor: agreed ? 'pointer' : 'not-allowed' }}>
-                I agree, continue
+                style={{ backgroundColor: '#2d1a0e', opacity: (agreed && !savingAgreement) ? 1 : 0.4, cursor: (agreed && !savingAgreement) ? 'pointer' : 'not-allowed' }}>
+                {savingAgreement ? 'Saving...' : 'I agree, continue'}
               </button>
             </div>
           )}
@@ -178,6 +207,9 @@ Welcome to Whiskly. We are glad you are here.
                   A copy of what you just agreed to has been sent to your email. You can always find our full terms at whiskly.com/terms.
                 </p>
               </div>
+              {error && (
+                <p className="text-sm px-4 py-3 rounded-xl bg-red-50 text-red-700 border border-red-200">{error}</p>
+              )}
               <button
                 onClick={handleComplete}
                 disabled={completing}

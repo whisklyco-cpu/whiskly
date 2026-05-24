@@ -3,13 +3,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 import { EmergencyCase } from './components/EmergencyCase'
 import { DisputeCase } from './components/DisputeCase'
 import { DisputesTab } from './components/DisputesTab'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
-const TABS = ['Overview', 'Orders', 'Bakers', 'Customers', 'Disputes', 'Applications', 'Emergency', 'Accounting', 'Earnings', 'Broadcast', 'Reviews', 'Messages']
+const TABS = ['Overview', 'Orders', 'Bakers', 'Customers', 'Disputes', 'Applications', 'Emergency', 'Accounting', 'Earnings', 'Broadcast', 'Reviews', 'Messages', 'Photo Auth']
 
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState('Overview')
@@ -331,7 +331,7 @@ export default function AdminPanel() {
     <div className="min-h-screen" style={{ backgroundColor: '#f5f0eb' }}>
       <nav className="bg-white shadow-sm px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/"><WhisklyLogo variant="horizontal" size="sm" /></Link>
+          <Logo size={28} />
           <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ backgroundColor: '#fef9c3', color: '#854d0e' }}>Admin</span>
         </div>
         <div className="flex items-center gap-3">
@@ -1040,7 +1040,133 @@ export default function AdminPanel() {
           </div>
         )}
 
+        {/* ── Photo Auth Review ────────────────────────────────────────────── */}
+        {activeTab === 'Photo Auth' && (
+          <div className="flex flex-col gap-6">
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <h2 className="text-base font-bold mb-1" style={{ color: '#2d1a0e' }}>Photo Auth Review</h2>
+              <p className="text-xs mb-6" style={{ color: '#5c3d2e' }}>
+                Bakers who have completed photo authentication but have not yet been manually verified. Run a
+                reverse image search on their portfolio (Google Images + TinEye) before marking verified.
+              </p>
+              <PhotoAuthReviewTable />
+            </div>
+          </div>
+        )}
+
       </div>
+    </div>
+  )
+}
+
+function PhotoAuthReviewTable() {
+  const [rows, setRows] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [verifying, setVerifying] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase
+        .from('bakers')
+        .select('id, business_name, email, is_founding_baker, photo_auth_completed_at, photo_auth_affidavit_signed_at, verification_video_url, photo_auth_admin_verified_at')
+        .not('photo_auth_completed_at', 'is', null)
+        .is('photo_auth_admin_verified_at', null)
+        .order('photo_auth_completed_at', { ascending: true })
+      setRows(data || [])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  async function markVerified(bakerId: string) {
+    setVerifying(bakerId)
+    await supabase
+      .from('bakers')
+      .update({ photo_auth_admin_verified_at: new Date().toISOString(), photo_auth_admin_verified_by: 'admin' })
+      .eq('id', bakerId)
+    setRows(prev => prev.filter(r => r.id !== bakerId))
+    setVerifying(null)
+  }
+
+  if (loading) return <p className="text-sm py-4" style={{ color: '#9c7b6b' }}>Loading…</p>
+  if (!rows.length) return (
+    <div className="text-center py-8">
+      <p className="text-sm font-semibold mb-1" style={{ color: '#2d1a0e' }}>All caught up</p>
+      <p className="text-xs" style={{ color: '#9c7b6b' }}>No bakers awaiting photo auth verification.</p>
+    </div>
+  )
+
+  return (
+    <div className="flex flex-col gap-4">
+      {rows.map(baker => (
+        <div key={baker.id} className="rounded-xl p-5 border" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <p className="font-semibold text-sm" style={{ color: '#2d1a0e' }}>{baker.business_name}</p>
+              <p className="text-xs mt-0.5" style={{ color: '#5c3d2e' }}>{baker.email}</p>
+              {baker.is_founding_baker && (
+                <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ backgroundColor: '#fff7ed', color: '#8B4513' }}>Founding Baker</span>
+              )}
+            </div>
+            <button
+              onClick={() => markVerified(baker.id)}
+              disabled={verifying === baker.id}
+              className="px-4 py-2 rounded-lg text-xs font-semibold text-white flex-shrink-0"
+              style={{ backgroundColor: verifying === baker.id ? '#c4a882' : '#166534' }}
+            >
+              {verifying === baker.id ? 'Saving…' : 'Mark Verified'}
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-xs" style={{ color: '#5c3d2e' }}>
+            <div>
+              <span className="font-semibold">Affidavit signed:</span>{' '}
+              {baker.photo_auth_affidavit_signed_at
+                ? new Date(baker.photo_auth_affidavit_signed_at).toLocaleString()
+                : '—'}
+            </div>
+            <div>
+              <span className="font-semibold">Auth completed:</span>{' '}
+              {baker.photo_auth_completed_at
+                ? new Date(baker.photo_auth_completed_at).toLocaleString()
+                : '—'}
+            </div>
+          </div>
+          {baker.verification_video_url && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Verification video:</p>
+              <a
+                href={baker.verification_video_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs underline"
+                style={{ color: '#8B4513' }}
+              >
+                View video
+              </a>
+            </div>
+          )}
+          <div className="mt-3 flex gap-3">
+            <a
+              href={`https://images.google.com/searchbyimage?image_url=${encodeURIComponent('https://qtketkbvfjduuysyqzld.supabase.co/storage/v1/object/public/baker-photos/' + baker.id)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-3 py-1.5 rounded-lg border font-semibold"
+              style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}
+            >
+              Google Reverse Search
+            </a>
+            <a
+              href="https://www.tineye.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-3 py-1.5 rounded-lg border font-semibold"
+              style={{ borderColor: '#e0d5cc', color: '#5c3d2e' }}
+            >
+              TinEye
+            </a>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

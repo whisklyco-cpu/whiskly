@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { Logo } from '@/components/Logo'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -43,9 +44,8 @@ export default function NavbarPreview() {
   return (
     <nav className="bg-white shadow-sm relative" style={{ zIndex: 1000 }}>
       <div className="flex items-center justify-between px-5 md:px-8 py-4">
-        {/* Logo — flat beater instead of WhisklyLogo */}
         <Link href="/preview" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
-          <img src="/beater-logo.png" alt="Whiskly" style={{ height: '32px', width: 'auto' }} />
+          <Logo size={28} linked={false} />
         </Link>
 
         {/* Desktop nav */}

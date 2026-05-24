@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import WhisklyLogo from '@/components/WhisklyLogo'
+import { Logo } from '@/components/Logo'
 import StepOne from './steps/StepOne'
 import StepTwo from './steps/StepTwo'
 import StepThree from './steps/StepThree'
@@ -318,7 +318,7 @@ export default function JoinPage() {
 
         {/* Header */}
         <div className="text-center mb-8">
-          <Link href="/"><WhisklyLogo variant="horizontal" size="md" /></Link>
+          <Logo size={32} />
           <p className="text-sm mt-1" style={{ color: '#5c3d2e' }}>Baker Application · Step {step} of {TOTAL_STEPS}</p>
         </div>
 

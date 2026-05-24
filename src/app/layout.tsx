@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Lato } from "next/font/google";
+import { DM_Serif_Display, Playfair_Display, Lato } from "next/font/google";
 import "./globals.css";
 import AttributionCapture from "@/components/AttributionCapture";
+
+const dmSerifDisplay = DM_Serif_Display({
+  variable: "--font-dm-serif",
+  subsets: ["latin"],
+  weight: ["400"],
+  style: ["normal", "italic"],
+});
 
 const playfair = Playfair_Display({
   variable: "--font-playfair",
@@ -18,6 +25,14 @@ const lato = Lato({
 export const metadata: Metadata = {
   title: 'Whiskly | Custom Cakes from Local Home Bakers',
   description: 'Book local home bakers for custom cakes, cookies, and desserts. Clear pricing, structured ordering, and secure payments. No more Instagram DMs.',
+  metadataBase: new URL('https://www.whiskly.co'),
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
   openGraph: {
     title: 'Whiskly | Custom Cakes from Local Home Bakers',
     description: 'Book local home bakers for custom cakes, cookies, and desserts. Clear pricing, structured ordering, and secure payments. No more Instagram DMs.',
@@ -25,10 +40,10 @@ export const metadata: Metadata = {
     siteName: 'Whiskly',
     images: [
       {
-        url: 'https://www.whiskly.co/og-image.png',
+        url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Whiskly — Custom Cakes from Local Home Bakers',
+        alt: 'Whiskly: Custom Cakes from Local Home Bakers',
       },
     ],
     locale: 'en_US',
@@ -38,7 +53,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Whiskly | Custom Cakes from Local Home Bakers',
     description: 'Book local home bakers for custom cakes, cookies, and desserts. Clear pricing, structured ordering, and secure payments. No more Instagram DMs.',
-    images: ['https://www.whiskly.co/og-image.png'],
+    images: ['/og-image.png'],
   },
 };
 
@@ -49,7 +64,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" dir="ltr">
-      <body className={`${playfair.variable} ${lato.variable} antialiased`}>
+      <body className={`${dmSerifDisplay.variable} ${playfair.variable} ${lato.variable} antialiased`}>
         <AttributionCapture />
         {children}
       </body>

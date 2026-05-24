@@ -14,15 +14,24 @@ export default function ResetPassword() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [sessionReady, setSessionReady] = useState(false)
+  const [linkError, setLinkError] = useState('')
 
   useEffect(() => {
-    // Supabase handles the token from the URL automatically
+    const timeout = setTimeout(() => {
+      setLinkError('This reset link is invalid or has expired. Request a new one.')
+    }, 5000)
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
+        clearTimeout(timeout)
         setSessionReady(true)
       }
     })
-    return () => subscription.unsubscribe()
+
+    return () => {
+      clearTimeout(timeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   async function handleReset() {
@@ -57,6 +66,21 @@ export default function ResetPassword() {
               <p className="text-4xl mb-4">✓</p>
               <h1 className="text-xl font-bold mb-2" style={{ color: '#2d1a0e' }}>Password updated!</h1>
               <p className="text-sm" style={{ color: '#5c3d2e' }}>Taking you to sign in...</p>
+            </div>
+          ) : linkError ? (
+            <div className="text-center">
+              <p className="text-4xl mb-4">✕</p>
+              <h1 className="text-xl font-bold mb-2" style={{ color: '#2d1a0e' }}>Link expired</h1>
+              <p className="text-sm mb-6" style={{ color: '#5c3d2e' }}>{linkError}</p>
+              <a href="/forgot-password"
+                className="inline-block w-full py-3 rounded-xl text-white font-semibold text-sm text-center"
+                style={{ backgroundColor: '#2d1a0e' }}>
+                Request a new link
+              </a>
+            </div>
+          ) : !sessionReady ? (
+            <div className="text-center py-4">
+              <p className="text-sm font-medium" style={{ color: '#5c3d2e' }}>Verifying reset link...</p>
             </div>
           ) : (
             <>

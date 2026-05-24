@@ -87,5 +87,54 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── Subscription lifecycle events ──────────────────────────────────────────
+
+  if (event.type === 'customer.subscription.created') {
+    const sub = event.data.object as Stripe.Subscription
+    await supabase
+      .from('bakers')
+      .update({
+        stripe_subscription_id: sub.id,
+        stripe_customer_id: sub.customer as string,
+        subscription_status: sub.status,
+        subscription_current_period_end: new Date((sub as any).current_period_end * 1000).toISOString(),
+      })
+      .eq('stripe_customer_id', sub.customer as string)
+  }
+
+  if (event.type === 'customer.subscription.updated') {
+    const sub = event.data.object as Stripe.Subscription
+    await supabase
+      .from('bakers')
+      .update({
+        subscription_status: sub.status,
+        subscription_current_period_end: new Date((sub as any).current_period_end * 1000).toISOString(),
+      })
+      .eq('stripe_subscription_id', sub.id)
+  }
+
+  if (event.type === 'customer.subscription.deleted') {
+    const sub = event.data.object as Stripe.Subscription
+    await supabase
+      .from('bakers')
+      .update({ subscription_status: 'canceled' })
+      .eq('stripe_subscription_id', sub.id)
+  }
+
+  if (event.type === 'invoice.payment_succeeded') {
+    const invoice = event.data.object as Stripe.Invoice
+    const subId = (invoice as any).subscription as string | null
+    if (subId) {
+      const sub = await stripe.subscriptions.retrieve(subId)
+      await supabase
+        .from('bakers')
+        .update({
+          subscription_status: sub.status,
+          subscription_current_period_end: new Date((sub as any).current_period_end * 1000).toISOString(),
+        })
+        .eq('stripe_subscription_id', subId)
+    }
+  }
+
   return NextResponse.json({ received: true })
 }
