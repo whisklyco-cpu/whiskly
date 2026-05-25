@@ -34,7 +34,7 @@ That's 50 outreach attempts per week. Roughly 10 a weekday. Doable alongside JFP
 
 Send via your existing communication channel with each:
 
-> Hey [Name], quick favor. We're recruiting our first 10 founding bakers for Whiskly and you and [Other Baker] are #1 and #2. Founding Bakers get permanent featured placement, locked-in tier pricing for life, and 12 months of Pro or Elite tier free when commission eventually activates.
+> Hey [Name], quick favor. We're recruiting our first 50 founding bakers for Whiskly and you and [Other Baker] are #1 and #2. Founding Bakers get a permanent badge, priority search placement for their first 12 months, a 30-day free trial, and locked-in $14/month (or $99/year) pricing and 7% commission for three years.
 >
 > Do you know 2 to 3 other home bakers who'd be a fit? I'd love an intro. DMV-area is ideal but not required.
 
@@ -44,7 +44,7 @@ For mutuals on Instagram or Facebook who bake or have mentioned baking:
 
 > Hi [Name], [mutual friend's name] mentioned you do custom cakes. I'm building a platform called Whiskly to make it easier for home bakers to take orders without living in Instagram DMs. Structured booking, deposits, customer communication, delivery details, all in one place.
 >
-> We're recruiting our first 10 founding bakers and I'd love to chat about whether it'd be a fit. Free to join, no monthly fee, no commission right now. Founding Baker status is permanent.
+> We're recruiting our first 50 founding bakers and I'd love to chat about whether it'd be a fit. Free to join, no monthly fee, no commission right now. Founding Baker status is permanent.
 >
 > Open to a quick 15-min call this week?
 
@@ -78,7 +78,7 @@ Build a spreadsheet of 50 qualifying bakers before sending any DMs. Batch the re
 
 > Hey [Name], saw your work and your [specific item, e.g., "watercolor buttercream technique"] is gorgeous. I'm a baker too, and I built a platform for home bakers in MD/DC/VA called Whiskly to handle everything that's not the actual baking: bookings, deposits, customer communication, delivery details, all in one place.
 >
-> We're recruiting our first 10 founding bakers right now and I'd love to send you details if you're interested. Free to join, no monthly fee, no commission. Founding Baker status is permanent.
+> We're recruiting our first 50 founding bakers right now and I'd love to send you details if you're interested. Free to join, no monthly fee, no commission. Founding Baker status is permanent.
 >
 > Want me to send the link?
 
@@ -91,7 +91,7 @@ Build a spreadsheet of 50 qualifying bakers before sending any DMs. Batch the re
 
 > Great! Here's the page: whiskly.co/for-bakers
 >
-> The Founding Baker offer is the part to focus on: permanent featured placement, locked-in tier pricing for life, and 12 months of Pro or Elite tier free when commission activates.
+> The Founding Baker offer is the part to focus on: a permanent badge, priority placement for the first 12 months, a 30-day free trial, and locked-in $14/month (or $99/year) pricing and 7% commission for three years.
 >
 > Application takes about 10 minutes: whiskly.co/join
 >
@@ -136,7 +136,7 @@ After credibility is established, post one introduction:
 
 > Hi all, I'm Lxy. I've been a home baker in MD and got tired of running my entire business through Instagram DMs and Venmo. So I built a platform called Whiskly for home bakers like us. Structured booking, deposits, customer communication, all in one place.
 >
-> We're in early access and recruiting our first 10 founding bakers right now. If anyone wants to take a look or has questions about the model, comment or DM me. Happy to share more.
+> We're in early access and recruiting our first 50 founding bakers right now. If anyone wants to take a look or has questions about the model, comment or DM me. Happy to share more.
 >
 > [Link to whiskly.co/for-bakers]
 
@@ -154,7 +154,7 @@ You said you weren't sure which channels you have access to. Here's what you mig
 
 Your federal IT and JFP professional network includes event planners, wedding industry contacts, HR people doing corporate event planning, government office event coordinators. Any of those people personally know bakers or hire them for events. Soft ask:
 
-> Hi [Name], random ask: do you know any home bakers in the DMV area who do custom orders? I'm building a platform for cottage bakers and looking for our first 10 founding members. Happy to share details if you have someone in mind.
+> Hi [Name], random ask: do you know any home bakers in the DMV area who do custom orders? I'm building a platform for cottage bakers and looking for our first 50 founding members. Happy to share details if you have someone in mind.
 
 This is one DM that could yield 3 to 5 baker introductions per response.
 
@@ -162,7 +162,7 @@ This is one DM that could yield 3 to 5 baker introductions per response.
 
 Planners know bakers. Cold-message DMV wedding planners on Instagram or LinkedIn:
 
-> Hi [Name], I'm building a platform for home bakers in the DMV area to streamline custom orders. Looking for our first 10 founding bakers. Do you know any independent bakers you'd recommend I reach out to? Happy to send a fee-free founding spot their way if it's a fit.
+> Hi [Name], I'm building a platform for home bakers in the DMV area to streamline custom orders. Looking for our first 50 founding bakers. Do you know any independent bakers you'd recommend I reach out to? Happy to send a fee-free founding spot their way if it's a fit.
 
 One planner reply often yields 5 to 10 baker introductions. Highest leverage outreach you can do.
 
@@ -212,8 +212,8 @@ After 50 to 100 cold DMs, you'll have real data on which framing lands and where
 
 The 10-baker cap is your single strongest asset. Use it consistently:
 
-- "8 Founding Baker spots left"
-- "We're recruiting our first 10. Once we hit 10, the offer closes permanently."
+- "42 Founding Baker spots left"
+- "We're recruiting our first 50. Once we hit 50, the offer closes permanently."
 - NOT "founding spots are limited" (vague)
 
 As you sign bakers, update the public counter on /for-bakers AND in every DM. Visible scarcity drives action. Once you hit 5/10, urgency rises sharply for the remaining outreach.

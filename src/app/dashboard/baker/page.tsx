@@ -1676,7 +1676,7 @@ async function triggerEmergencyPause() {
                       <>
                         <p className="font-bold text-sm mb-1" style={{ color: '#5b21b6' }}>Founding Baker pricing closes soon</p>
                         <p className="text-xs leading-relaxed" style={{ color: '#6d28d9' }}>
-                          Founding Baker pricing ($19/month, locked in forever) is available to the first 50 bakers only. {spotsLeft} spot{spotsLeft !== 1 ? 's' : ''} remaining. Once they're gone, Pro is $29/month.
+                          Founding Baker pricing ($14/month or $99/year, locked for 3 years) is available to the first 50 bakers only. {spotsLeft} spot{spotsLeft !== 1 ? 's' : ''} remaining.
                         </p>
                       </>
                     ) : (

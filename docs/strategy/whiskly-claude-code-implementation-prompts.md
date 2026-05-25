@@ -160,12 +160,12 @@ Add the following fields to the Supabase database via migrations.
 
 To the `bakers` table (or equivalent):
 - `activation_date` (date, default to created_at date for existing bakers)
-- `is_founding_baker` (boolean, default false; set TRUE for the first 10 approved bakers)
+- `is_founding_baker` (boolean, default false; set TRUE for the first 50 approved bakers)
 - `commission_activation_date` (date, nullable)
 - `commission_activation_trigger` (text enum: '40_percent', '18_month_backstop', 'early_activation', null)
-- `tier_selected` (text enum: 'free', 'pro', 'elite', null)
+- `tier_selected` (text enum: 'free', 'pro', 'founding', null)
 - `tier_selected_at` (timestamp, nullable)
-- `founding_baker_free_tier_expires_at` (date, nullable; only set when Founding Baker selects Pro or Elite during activation window)
+- `founding_baker_trial_ends_at` (date, nullable; set to account approval date + 30 days for Founding Bakers)
 - `disclosure_acknowledged_at` (timestamp, nullable)
 - `disclosure_version_acknowledged` (text, nullable)
 - `threshold_30_notice_sent_at` (timestamp, nullable)
@@ -361,10 +361,10 @@ Implement these communications:
    - 7-day reminder: 7 days before activation if tier_selected is still null
    - Default-applied confirmation: send on activation_date if tier_selected is still null; set tier_selected = 'free' and tier_selected_at = now()
 
-5. **Founding Baker free tier expiration (Section 7):**
-   - Sent 11 months after commission_activation_date
-   - Only to bakers where is_founding_baker = TRUE AND tier_selected IN ('pro', 'elite')
-   - Set bakers.founding_baker_free_tier_expires_at = commission_activation_date + 12 months at activation time
+5. **Founding Baker trial expiration (Section 7):**
+   - Sent 7 days before founding_baker_trial_ends_at
+   - Only to bakers where is_founding_baker = TRUE AND tier_selected = 'founding'
+   - founding_baker_trial_ends_at is set at account approval date + 30 days (tracked via Stripe trial period)
 
 For all emails:
 - Send via Resend

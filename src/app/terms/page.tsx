@@ -62,12 +62,13 @@ Commission will activate for an individual baker when the first of the following
 
 For purposes of this Section, an order is "Whiskly-sourced" if (i) the customer discovered the baker through Whiskly's discovery features (browse, search, category pages, or platform recommendations) and (ii) the customer had no prior order relationship with the baker on the Whiskly platform.
 
-When commission activates, bakers may select one of three tiers:
+When commission activates, bakers may select from the following tiers:
 
-Tier          Monthly Fee     Commission
-Free          $0              10% per order
-Pro           $19/month       7% per order
-Founding      $14/month       5% per order (locked)
+Tier                    Monthly Fee     Commission
+Free                    $0              10% per order
+Founding                $14/month       7% per order (locked, first 50 bakers only)
+
+A standard paid tier will be available for non-founding bakers. Pricing and features will be published before the standard tier launches.
 
 Bakers will default to the Free tier and may upgrade or downgrade at any time. Tier changes take effect at the start of the next billing cycle.
 
@@ -89,27 +90,15 @@ This provision is reserved for genuine operational necessity and is not the plan
 
 6.5 Founding Baker Provisions
 
-Bakers who earn Founding Baker status (defined as one of the first 50 baker accounts approved on the Whiskly platform who complete all three qualification requirements in the Founding Baker Program Specification) receive the following lifetime benefits:
+Bakers who join during the Founding Baker period (the first 50 baker accounts approved on the Whiskly platform) receive the following benefits:
 
-(a) Permanent featured placement in browse search results, surfacing above non-Founding bakers at the same rating level;
+(a) A "Founding Baker" badge displayed permanently on the baker's public profile;
 
-(b) Locked subscription pricing of $14 per month or $99 per year for the lifetime of the account, even if Whiskly raises subscription pricing for other tiers in the future;
+(b) Priority featured placement in browse search results during the first twelve (12) months following account approval;
 
-(c) Locked commission rate of 5 percent when commission activation begins, for the lifetime of the account, even if Whiskly raises commission rates for other tiers in the future;
+(c) A thirty (30) day free trial of the Founding tier, after which the founding rate of $14 per month (or $99 per year if billed annually) applies; and
 
-(d) First month of subscription provided free of charge;
-
-(e) A permanent Founding Baker number from 1 through 50 displayed on the baker's profile;
-
-(f) A Verified Original Work badge, subject to enhanced photo authentication as described in the Founding Baker Program Specification;
-
-(g) Listing on the permanent Meet Our Founding Bakers page;
-
-(h) Early access to new platform features, a direct founding baker group chat with the founder, a personal 30-minute onboarding call, and first access to corporate and bulk orders before they open to the general baker pool;
-
-(i) A digital welcome kit on day one, and physical merchandise within the first 12 months of the program.
-
-Founding Baker status is non-transferable and may be paused, removed, or forfeited under the conditions described in the Founding Baker Program Specification.
+(d) Locked-in founding tier pricing ($14/month or $99/year) and a commission rate of seven percent (7%) for a period of three (3) years from the date of account approval. After the three-year period, accounts convert to then-standard paid tier pricing with notice provided per Section 6.6.
 
 6.6 Changes to Fee Structure
 
@@ -210,7 +199,7 @@ export default function TermsPage() {
           Terms of Service
         </h1>
         <p className="text-sm mb-2" style={{ color: '#5c3d2e' }}>
-          Last Updated: May 9, 2026
+          Last Updated: May 24, 2026
         </p>
         <p className="text-sm mb-12 leading-relaxed" style={{ color: '#5c3d2e' }}>
           Please read these Terms of Service carefully before using Whiskly. These Terms govern your use of our platform as both a customer and a baker.

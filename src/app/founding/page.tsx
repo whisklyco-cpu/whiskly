@@ -16,8 +16,8 @@ export default function FoundingPage() {
           </div>
           <h1 className="text-5xl md:text-6xl font-bold leading-tight mb-6"
             style={{ color: '#2d1a0e', letterSpacing: '-0.02em' }}>
-            You helped build Whiskly. Your rates, your status, and your place in the story are{' '}
-            <span style={{ color: '#8B4513' }}>locked in forever.</span>
+            You helped build Whiskly. Your badge, your status, and your place in the story are permanent.{' '}
+            <span style={{ color: '#8B4513' }}>Your rates are locked in for three years.</span>
           </h1>
           <p className="text-lg mb-10 leading-relaxed max-w-2xl" style={{ color: '#5c3d2e' }}>
             The first 50 bakers who join Whiskly receive permanent pricing, exclusive status, and a direct
@@ -88,35 +88,33 @@ export default function FoundingPage() {
         <div className="px-6 md:px-16" style={{ maxWidth: '1280px', margin: '0 auto' }}>
           <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>Compare</p>
           <h2 className="text-3xl font-bold mb-4" style={{ color: '#2d1a0e', letterSpacing: '-0.02em' }}>
-            Pro versus Founding: the core difference
+            Free versus Founding: the core difference
           </h2>
           <div className="overflow-x-auto mt-8">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ borderBottom: '2px solid #e0d5cc' }}>
-                  <th className="text-left py-4 px-5 font-semibold w-1/3" style={{ color: '#5c3d2e' }}></th>
+                  <th className="text-left py-4 px-5 font-semibold w-1/2" style={{ color: '#5c3d2e' }}></th>
                   <th className="text-center py-4 px-5 font-semibold" style={{ color: '#5c3d2e' }}>Free</th>
-                  <th className="text-center py-4 px-5 font-semibold" style={{ color: '#5c3d2e' }}>Pro</th>
                   <th className="text-center py-4 px-5 font-bold rounded-t-xl" style={{ color: 'white', backgroundColor: '#2d1a0e' }}>Founding</th>
                 </tr>
               </thead>
               <tbody>
                 {[
-                  ['Commission (Phase 2+)', '10%', '7%', '5% locked'],
-                  ['Monthly price', '$0', '$19', '$14 locked'],
-                  ['Annual price', '$0', '$149', '$99 locked'],
-                  ['First month free', '—', 'No', 'Yes'],
-                  ['Portfolio photos', '6–10', '6–30', '6–50'],
-                  ['Featured / hero photos', '1', '3', '3'],
-                  ['Spots available', 'Unlimited', 'Unlimited', 'First 50 only'],
-                  ['Verified Original Work badge', 'No', 'No', 'Yes'],
-                  ['Founding badge + number', 'No', 'No', 'Yes'],
-                  ['Priority search placement', 'No', 'Standard', 'Permanent'],
-                ].map(([label, free, pro, founding], i) => (
+                  ['Commission (Phase 2+)', '10%', '7% locked'],
+                  ['Monthly price', '$0', '$14 locked'],
+                  ['Annual price', '$0', '$99 locked'],
+                  ['Free trial', '—', '30 days'],
+                  ['Portfolio photos', '6–10', '6–50'],
+                  ['Featured / hero photos', '1', '3'],
+                  ['Spots available', 'Unlimited', 'First 50 only'],
+                  ['Verified Original Work badge', 'No', 'Yes'],
+                  ['Founding badge + number', 'No', 'Yes'],
+                  ['Priority search placement', 'No', 'First 12 months'],
+                ].map(([label, free, founding], i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #f5f0eb', backgroundColor: i % 2 === 0 ? '#faf8f6' : 'white' }}>
                     <td className="py-3.5 px-5 font-medium" style={{ color: '#2d1a0e' }}>{label}</td>
                     <td className="py-3.5 px-5 text-center" style={{ color: '#5c3d2e' }}>{free}</td>
-                    <td className="py-3.5 px-5 text-center" style={{ color: '#5c3d2e' }}>{pro}</td>
                     <td className="py-3.5 px-5 text-center font-semibold" style={{ color: '#2d1a0e', backgroundColor: founding === 'No' ? 'transparent' : '#fff7ed' }}>{founding}</td>
                   </tr>
                 ))}
@@ -124,9 +122,10 @@ export default function FoundingPage() {
             </table>
           </div>
           <p className="mt-8 text-sm leading-relaxed max-w-2xl" style={{ color: '#5c3d2e' }}>
-            Pro is open to any baker, forever, at standard rates that may change over time. Founding is the first 50
-            only, at rates that are locked permanently. If Whiskly raises Pro pricing or platform commission in future
-            years, founding bakers are never affected. That permanence is the central value of the program.
+            The Free tier is available to any baker, forever, at standard rates. Founding is the first 50
+            only, with a permanent Founding Baker badge and rates locked for three years. A standard paid tier for
+            bakers 51+ will be announced separately. If Whiskly raises pricing during those three years, founding
+            bakers are not affected.
           </p>
         </div>
       </section>
@@ -144,9 +143,9 @@ export default function FoundingPage() {
               <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: '#8B4513' }}>Financial</p>
               <ul className="flex flex-col gap-3">
                 {[
-                  '5% commission rate, locked permanently',
-                  '$14/month or $99/year, locked permanently',
-                  'First month completely free',
+                  '7% commission rate, locked for 3 years',
+                  '$14/month or $99/year, locked for 3 years',
+                  '30-day free trial',
                 ].map((b, i) => (
                   <li key={i} className="flex items-start gap-2.5">
                     <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-bold text-white" style={{ backgroundColor: '#8B4513' }}>✓</span>
@@ -164,7 +163,7 @@ export default function FoundingPage() {
                   'A founding baker number from 1 to 50, displayed alongside the badge',
                   'Verified Original Work badge, earned through enhanced photo authentication',
                   'Listed by name and specialty on the permanent Meet Our Founding Bakers page',
-                  'Permanent priority placement in search results',
+                  'Priority placement in search results — first 12 months',
                   'Named in Whiskly press coverage and investor materials',
                 ].map((b, i) => (
                   <li key={i} className="flex items-start gap-2.5">

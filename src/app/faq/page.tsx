@@ -90,11 +90,11 @@ const faqs = [
       },
       {
         q: 'What is Whiskly Pro?',
-        a: 'Whiskly Pro is our paid tier for bakers who want to grow faster. Pro includes featured placement in browse results, a Verified badge, 10 portfolio photos, analytics, a custom booking link, profile writing assistance, a pricing calculator, and more. Pro costs $29/month or $199/year.'
+        a: 'A standard paid tier for non-founding bakers is coming soon for bakers 51 and beyond. Pricing and features will be published before it launches. At launch, the only paid tier available is the Founding tier ($14/month or $99/year), which is limited to the first 50 bakers.'
       },
       {
         q: 'What is the Founding Baker offer?',
-        a: 'The first 50 bakers who sign up for Pro get locked in at $19/month or $149/year — forever, even if prices go up. They also get an exclusive Founding Baker badge on their profile that no one else can ever earn. Once 50 spots are filled, this offer is gone.'
+        a: 'Founding Bakers (the first 50 approved on the platform) receive: a permanent Founding Baker badge on their profile; priority featured placement in browse results for their first 12 months; a 30-day free trial of the Founding tier; and locked founding pricing ($14/month or $99/year) and a 7% commission rate for three years from account approval — even if Whiskly raises prices for new bakers. Once 50 spots are filled, this offer is gone.'
       },
       {
         q: 'Do I have to accept every order request?',
@@ -146,7 +146,7 @@ const faqs = [
 },
 {
   q: 'How does Whiskly make money?',
-  a: 'Right now, we charge customers a small $4.99 platform fee at checkout. Bakers pay 0% commission. We don\'t take a cut from your order price.\n\nAs Whiskly grows, we activate commission on a per-baker basis when one of two things happens: 40% of your orders come from customers who discovered you through Whiskly (over a rolling 90-day period), or 18 months from when you joined the platform, whichever comes first. When commission activates, you choose your tier: Free (10%, no monthly fee), Pro ($19/month, 7%), or Founding ($14/month, 5% — first 50 bakers only, permanently locked).\n\nYou\'ll always see your Whiskly-sourced percentage in your dashboard, and we give 60 days written notice before commission activates for your account. Founding Bakers (first 50) get a permanently locked 5% commission rate and $14/month pricing for the lifetime of their account. Learn more at whiskly.co/founding.'
+  a: 'Right now, we charge customers a small $4.99 platform fee at checkout. Bakers pay 0% commission. We don\'t take a cut from your order price.\n\nAs Whiskly grows, we activate commission on a per-baker basis when one of two things happens: 40% of your orders come from customers who discovered you through Whiskly (over a rolling 90-day period), or 18 months from when you joined the platform, whichever comes first. When commission activates, you choose your tier: Free (10%, no monthly fee) or Founding ($14/month or $99/year, 7% — first 50 bakers only, locked for 3 years). A standard paid tier for bakers 51+ is coming soon.\n\nYou\'ll always see your Whiskly-sourced percentage in your dashboard, and we give 60 days written notice before commission activates for your account. Learn more at whiskly.co/founding.'
 },
 {
   q: 'What if I never hit 40% Whiskly-sourced orders?',
@@ -179,8 +179,8 @@ const faqs = [
         a: 'Whiskly is currently in early access, meaning we\'re actively building and improving the platform. During early access, there are no transaction fees for bakers. We\'ll give plenty of notice before any fees are introduced.'
       },
       {
-  q: 'What is the difference between free and Pro for bakers?',
-  a: 'Free tier bakers pay 10% commission and get all core tools including order management, messaging, payments, and reviews. Pro bakers pay 7% commission and get featured placement in browse results, a Verified badge, 10 portfolio photos, analytics, a custom booking link, profile writing assistance, and a pricing calculator. Pro costs $29 per month or $199 per year.'
+  q: 'What is the difference between Free and Founding for bakers?',
+  a: 'Free tier bakers pay 10% commission and get all core tools including order management, messaging, payments, and reviews. Founding Bakers (first 50 only) pay 7% commission, locked for 3 years, at $14/month or $99/year with a 30-day free trial. They also receive a permanent Founding Baker badge, priority search placement for 12 months, and early feature access. A standard paid tier for bakers 51+ is coming soon.'
 },
 {
   q: 'How do I report a problem?',

@@ -6,13 +6,12 @@ export const dynamic = 'force-dynamic'
 
 const FREE_COMMISSION = 0.10
 const PRO_COMMISSION = 0.07
-const FOUNDING_COMMISSION = 0.05
+const FOUNDING_COMMISSION = 0.07
 
 function getCommissionRate(baker: { tier?: string | null; is_founding_baker?: boolean | null }): number {
   if (baker?.is_founding_baker) return FOUNDING_COMMISSION
   if (baker?.tier === 'founding') return FOUNDING_COMMISSION
   if (baker?.tier === 'pro') return PRO_COMMISSION
-  if (baker?.tier === 'elite') return PRO_COMMISSION // legacy fallback — treat as Pro
   return FREE_COMMISSION
 }
 

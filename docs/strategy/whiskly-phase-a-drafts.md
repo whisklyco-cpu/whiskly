@@ -34,8 +34,9 @@ When commission activates, bakers may select one of three tiers:
 | Tier | Monthly Fee | Commission |
 |---|---|---|
 | Free | $0 | 10% per order |
-| Pro | $19/month | 7% per order |
-| Elite | $34/month | 5% per order |
+| Founding | $14/month or $99/year | 7% per order (first 50 bakers, locked 3 years) |
+
+A standard paid tier for bakers 51+ will be announced separately.
 
 Bakers will default to the Free tier and may upgrade or downgrade at any time. Tier changes take effect at the start of the next billing cycle.
 
@@ -57,13 +58,15 @@ This provision is reserved for genuine operational necessity and is not the plan
 
 **6.5 Founding Baker Provisions**
 
-Bakers who join during the Founding Baker period (the first 10 baker accounts approved on the Whiskly platform) receive the following lifetime benefits:
+Bakers who join during the Founding Baker period (the first 50 baker accounts approved on the Whiskly platform) receive the following benefits:
 
-(a) Permanent featured placement in browse search results;
+(a) A "Founding Baker" badge displayed permanently on the baker's public profile;
 
-(b) When commission activates, the first twelve (12) months of Pro or Elite tier are provided free of monthly fee (commission rate still applies); and
+(b) Priority featured placement in browse search results during the first twelve (12) months following account approval;
 
-(c) Locked-in tier monthly fees ($19/month Pro, $34/month Elite) for the lifetime of the account, even if Whiskly raises tier pricing for new bakers in the future.
+(c) A thirty (30) day free trial of the Founding tier, after which the founding rate of $14 per month (or $99 per year if billed annually) applies; and
+
+(d) Locked-in founding tier pricing ($14/month or $99/year) and a commission rate of seven percent (7%) for a period of three (3) years from the date of account approval. After the three-year period, accounts convert to then-standard paid tier pricing with notice provided per Section 6.6.
 
 **6.6 Changes to Fee Structure**
 
@@ -134,19 +137,19 @@ Keep the existing "Sound familiar?" pain points section. Replace the pricing, ti
 >
 > Customers pay a small $4.99 platform fee at checkout, separate from your order price. That covers Whiskly's operations during this early phase.
 >
-> As Whiskly grows and starts driving meaningful customer volume to your business, we'll introduce tiered pricing so you can choose the level of platform support you want. We'll always give you 60 days written notice before any change, and Founding Bakers lock in the lowest rates for life.
+> As Whiskly grows and starts driving meaningful customer volume to your business, we'll introduce tiered pricing so you can choose the level of platform support you want. We'll always give you 60 days written notice before any change, and Founding Bakers lock in their founding rate ($14/month or $99/year, 7% commission) for three years.
 
-### Founding Baker (first 10 only)
+### Founding Baker (first 50 only)
 
-> The first 10 bakers on Whiskly become Founding Bakers. The benefits are permanent and locked in for the lifetime of your account.
+> The first 50 bakers on Whiskly become Founding Bakers. The Founding Baker badge is permanent. Rates are locked for three years.
 >
-> ✓ Featured placement in browse results, forever
-> ✓ Locked-in tier pricing for life ($19/mo Pro, $34/mo Elite)
-> ✓ 12 months of Pro or Elite tier free when commission activates
+> ✓ Founding Baker badge — permanent on your profile
+> ✓ Priority placement in browse results — first 12 months
+> ✓ 30-day free trial of the Founding tier
+> ✓ Locked-in founding pricing ($14/mo or $99/yr) and 7% commission for three years
 > ✓ Direct input on platform features through monthly founder calls
-> ✓ Founding Baker badge on your profile
 >
-> Once we hit 10 Founding Bakers, this offer closes permanently.
+> Once we hit 50 Founding Bakers, this offer closes permanently.
 >
 > [Apply as a Baker]
 

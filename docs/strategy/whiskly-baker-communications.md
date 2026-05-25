@@ -3,9 +3,9 @@
 All communications aligned with the Phase 1 model decisions:
 - 0% commission, $4.99 customer fee, no monthly fee during Phase 1
 - Commission activates at 40% Whiskly-sourced (90-day rolling) OR 18 months
-- Three tiers when commission activates: Free 10%, Pro $19/mo + 7%, Elite $34/mo + 5%
+- Tiers when commission activates: Free (10%), Founding ($14/mo + 7%, first 50 bakers only, locked 3 years), standard paid tier coming for bakers 51+
 - 60 days written notice before commission activates
-- Founding Baker benefits: permanent featured placement, locked-in tier pricing, 12 months free Pro/Elite
+- Founding Baker benefits: permanent badge, 12-month priority placement, 30-day free trial, locked-in $14/mo or $99/yr pricing and 7% commission for 3 years
 
 ---
 
@@ -26,11 +26,12 @@ All communications aligned with the Phase 1 model decisions:
 >
 > Most bakers are fully set up in under an hour.
 >
-> If you're one of our first 10 bakers, you're a **Founding Baker**. You get:
+> If you're one of our first 50 bakers, you're a **Founding Baker**. You get:
 >
-> - Permanent featured placement in browse results
-> - Locked-in tier pricing for the lifetime of your account
-> - 12 months free Pro or Elite tier when commission eventually activates
+> - A permanent Founding Baker badge on your profile
+> - Priority featured placement in browse results — first 12 months
+> - A 30-day free trial of the Founding tier ($14/month or $99/year)
+> - Locked-in founding pricing and 7% commission for three years from account approval
 > - Direct input on platform features through monthly founder calls
 >
 > Need help? Reply to this email. I read every one.
@@ -67,13 +68,14 @@ This is shown the first time a baker logs in after approval, before they can cre
 > 1. At least **40% of your orders over a 90-day period** come from customers Whiskly brought to you (we call this "Whiskly-sourced"), OR
 > 2. **18 months from today** ([calculated activation deadline date])
 >
-> When commission activates, you'll choose between three tiers:
+> When commission activates, you'll choose between:
 >
 > | Tier | Monthly Fee | Commission |
 > |---|---|---|
 > | Free | $0 | 10% per order |
-> | Pro | $19/month | 7% per order |
-> | Elite | $34/month | 5% per order |
+> | Founding | $14/month or $99/year | 7% per order (first 50 bakers, locked 3 years) |
+>
+> A standard paid tier for bakers 51+ will be announced separately.
 >
 > You'll get **60 days written notice** before commission activates for you. No surprises.
 >
@@ -92,11 +94,12 @@ This is shown the first time a baker logs in after approval, before they can cre
 >
 > #### If you're a Founding Baker
 >
-> Whether or not you knew it when you applied, the first 10 bakers on Whiskly are Founding Bakers. You get:
+> Whether or not you knew it when you applied, the first 50 bakers on Whiskly are Founding Bakers. You get:
 >
-> - Permanent featured placement in browse results
-> - Locked-in tier pricing for the lifetime of your account ($19/mo Pro, $34/mo Elite, even if we raise prices later)
-> - 12 months free Pro or Elite tier when commission activates
+> - A permanent Founding Baker badge on your profile
+> - Priority featured placement in browse results — first 12 months
+> - A 30-day free trial of the Founding tier ($14/month or $99/year)
+> - Locked-in founding pricing and 7% commission for three years from account approval, even if we raise prices later
 > - Direct input on platform features through monthly founder calls
 >
 > #### Got questions?
@@ -191,8 +194,8 @@ This is a new communication created by the model. Gives bakers a heads-up before
 > Quick reminder of what happens when commission activates:
 >
 > - You get **60 days written notice** with the exact activation date
-> - You choose between Free (10%), Pro ($19/mo + 7%), or Elite ($34/mo + 5%)
-> - **Founding Bakers** get 12 months of Pro or Elite tier free at activation
+> - You choose between Free (10%) or Founding ($14/mo + 7%, if you are one of the first 50 bakers)
+> - **Founding Bakers** get a 30-day free trial before billing starts
 >
 > No action needed right now. Just wanted you to see this coming so it's not a surprise.
 >
@@ -228,8 +231,7 @@ This is a new communication created by the model. Gives bakers a heads-up before
 > | Tier | Monthly Fee | Commission | Best for |
 > |---|---|---|---|
 > | Free | $0 | 10% per order | Low volume, occasional orders |
-> | Pro | $19/month | 7% per order | Steady monthly orders ($300+ revenue/mo) |
-> | Elite | $34/month | 5% per order | High volume, business-focused ($700+ revenue/mo) |
+> | Founding | $14/month or $99/year | 7% per order | First 50 bakers only — locked for 3 years |
 >
 > If you don't actively choose, you'll default to the **Free tier** (10% per order, no monthly fee).
 >
@@ -237,7 +239,7 @@ This is a new communication created by the model. Gives bakers a heads-up before
 >
 > *Only include this section if baker is a Founding Baker:*
 >
-> As a Founding Baker, your **first 12 months** on Pro or Elite are free. You'll only pay the per-order commission until [date 12 months from activation]. After that, the standard monthly fee for your selected tier kicks in (locked at $19/mo Pro or $34/mo Elite for the lifetime of your account, even if we raise prices for new bakers).
+> As a Founding Baker, you have a **30-day free trial** of the Founding tier. After that, your locked rate of $14/month or $99/year applies. The 7% commission rate and pricing are locked for three years from your account approval date, even if we raise prices for new bakers.
 >
 > #### Choose your tier
 >
@@ -282,7 +284,7 @@ This is a new communication created by the model. Gives bakers a heads-up before
 >
 > Commission activates for your account in **7 days** ([date]). You haven't selected a tier yet.
 >
-> If you don't choose by then, you'll be set to the **Free tier** automatically. You can change tiers anytime after activation, so this isn't permanent, but Founding Baker free months only apply if you select Pro or Elite during the initial activation window.
+> If you don't choose by then, you'll be set to the **Free tier** automatically. You can upgrade to the Founding tier anytime after activation if you are one of the first 50 bakers, though the 30-day free trial only applies during the initial activation window.
 >
 > [Choose your tier]
 >
@@ -299,9 +301,7 @@ This is a new communication created by the model. Gives bakers a heads-up before
 > - $0/month
 > - 10% commission per order
 >
-> You can switch to Pro or Elite anytime from your dashboard: [link]
->
-> Note: the **12-month free Pro/Elite tier benefit** for Founding Bakers expired with the activation window. If you want to upgrade now, you'll pay the standard monthly fee for that tier (Pro $19/mo or Elite $34/mo, both locked in at these rates for the lifetime of your account).
+> If you are a Founding Baker, you can still upgrade to the Founding tier ($14/month or $99/year, 7% commission, locked for 3 years) from your dashboard: [link]. Note: the 30-day free trial only applied during the initial activation window.
 >
 > Questions? Reply to this email.
 >
@@ -309,26 +309,20 @@ This is a new communication created by the model. Gives bakers a heads-up before
 
 ---
 
-## 7. Founding Baker Free Tier Expiration Notice (sent 11 months after commission activation, only to Founding Bakers on Pro/Elite)
+## 7. Founding Baker Trial Expiration Notice (sent when 30-day free trial is ending)
 
-**Subject:** Your free Pro/Elite tier ends in 30 days
+**Subject:** Your Founding Baker free trial ends in 7 days
 
 > Hi [Baker name],
 >
-> Your **12-month free Pro/Elite tier** as a Founding Baker ends on **[date 30 days from now]**. After that, your standard monthly fee kicks in:
+> Your **30-day free trial** of the Founding tier ends on **[date]**. After that, your locked founding rate kicks in:
 >
-> - **Pro: $19/month** (locked at this rate for life)
-> - **Elite: $34/month** (locked at this rate for life)
+> - **$14/month** (or $99/year if you switch to annual billing)
+> - **7% commission** — locked for three years from your account approval date
 >
-> No action needed unless you want to change tiers. Your current tier and rate stay the same, you just start paying the monthly fee.
+> No action needed if you want to continue. Just make sure your payment method on file is current.
 >
 > Want to downgrade to Free (no monthly fee, 10% commission) before the charge starts? Change anytime: [link]
->
-> Want to keep your current tier? Just make sure your payment method on file is current.
->
-> #### Why we capped the free benefit at 12 months
->
-> The 12-month free benefit was our way of thanking the first 10 bakers who took a chance on a brand-new platform. After a year of paid orders, you've had time to see whether Pro or Elite features pay for themselves. Most bakers at your volume choose to keep Pro.
 >
 > Questions or want to talk through the math for your specific business? Reply to this email.
 >
@@ -371,17 +365,17 @@ This is a new communication created by the model. Gives bakers a heads-up before
 **Tier defaults:**
 - If baker doesn't select tier by activation date, default to Free
 - Send default-applied confirmation email automatically
-- Founding Baker 12-month free benefit applies ONLY if Pro/Elite was selected during the 60-day activation window. After that window closes, the benefit is forfeited.
+- Founding Baker 30-day free trial applies from account approval date, not tied to the commission activation window. Trial is tracked via Stripe's trial period on the subscription.
 
 **Database fields needed:**
 - `baker.disclosure_acknowledged_at` (timestamp)
 - `baker.disclosure_version_acknowledged` (string, e.g., "v1.0")
 - `baker.commission_activation_date` (date, null until triggered)
 - `baker.commission_activation_trigger` (enum: '40_percent', '18_month_backstop', 'early_activation', null)
-- `baker.tier_selected` (enum: 'free', 'pro', 'elite', null)
+- `baker.tier_selected` (enum: 'free', 'pro', 'founding', null)
 - `baker.tier_selected_at` (timestamp)
 - `baker.is_founding_baker` (boolean)
-- `baker.founding_baker_free_tier_expires_at` (date, only set if Founding Baker on Pro/Elite)
+- `baker.founding_baker_trial_ends_at` (date, set to account approval date + 30 days for Founding Bakers)
 - `baker.threshold_30_notice_sent_at` (timestamp, null until sent once)
 
 **Edge cases to handle:**

@@ -188,7 +188,7 @@ export default function ForBakersPage() {
             driving customers to your business. You always get 60 days written notice before anything changes.
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
             {/* Free card */}
             <div className="rounded-2xl p-8 border" style={{ borderColor: '#e0d5cc', backgroundColor: '#faf8f6' }}>
               <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: '#5c3d2e' }}>Free</p>
@@ -214,32 +214,6 @@ export default function ForBakersPage() {
               </Link>
             </div>
 
-            {/* Pro card */}
-            <div className="rounded-2xl p-8 border" style={{ borderColor: '#e0d5cc', backgroundColor: 'white' }}>
-              <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: '#5c3d2e' }}>Pro</p>
-              <p className="text-3xl font-bold mb-1" style={{ color: '#2d1a0e' }}>$19</p>
-              <p className="text-xs mb-6" style={{ color: '#9c7b6b' }}>per month when Phase 2 activates</p>
-              <ul className="flex flex-col gap-2.5 mb-8">
-                {[
-                  '0% commission today',
-                  '7% commission when Phase 2 activates',
-                  'Everything in Free',
-                  'Priority placement in search',
-                  'Analytics dashboard',
-                  '6–30 portfolio photos',
-                  'Custom booking link',
-                ].map((f, i) => (
-                  <li key={i} className="flex items-center gap-2 text-sm" style={{ color: '#5c3d2e' }}>
-                    <span className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white" style={{ backgroundColor: '#2d1a0e' }}>✓</span>
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              <Link href="/join" className="block text-center px-6 py-3 rounded-xl font-semibold text-sm border" style={{ borderColor: '#2d1a0e', color: '#2d1a0e' }}>
-                Apply as a Baker
-              </Link>
-            </div>
-
             {/* Founding card */}
             <div className="rounded-2xl p-8 relative" style={{ backgroundColor: '#2d1a0e' }}>
               <div className="absolute top-4 right-4 px-2.5 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: '#8B4513', color: 'white' }}>
@@ -247,14 +221,14 @@ export default function ForBakersPage() {
               </div>
               <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: '#8B4513' }}>Founding</p>
               <p className="text-3xl font-bold mb-1 text-white">$14</p>
-              <p className="text-xs mb-6" style={{ color: '#c4a882' }}>per month, locked forever · $99/year</p>
+              <p className="text-xs mb-6" style={{ color: '#c4a882' }}>per month, locked for 3 years · $99/year · 30-day free trial</p>
               <ul className="flex flex-col gap-2.5 mb-8">
                 {[
                   '0% commission today',
-                  '5% commission locked forever',
-                  'First month free',
-                  'Everything in Pro',
-                  'Permanent priority search placement',
+                  '7% commission locked for 3 years',
+                  '30-day free trial',
+                  'Full order management dashboard',
+                  'Priority search placement — first 12 months',
                   '6–50 portfolio photos',
                   'Founding Baker badge + number',
                   'Verified Original Work badge',
@@ -273,17 +247,17 @@ export default function ForBakersPage() {
             </div>
           </div>
 
+          <p className="text-sm mb-6" style={{ color: '#5c3d2e' }}>
+            A standard paid tier will be available for bakers 51 and beyond. Pricing and features will be announced before it launches.
+          </p>
+
           {/* Breakeven explainer */}
           <div className="rounded-2xl p-6" style={{ backgroundColor: '#faf8f6', border: '1px solid #e0d5cc' }}>
             <p className="text-sm font-semibold mb-2" style={{ color: '#2d1a0e' }}>Doing the math</p>
-            <p className="text-sm leading-relaxed mb-2" style={{ color: '#5c3d2e' }}>
-              <span className="font-semibold">Pro</span> pays for itself at $290/month in orders — at that volume the 3% commission saving covers the $19 fee.
-              At $1,000/month, Pro saves you $30. At $3,000/month, $90.
-            </p>
             <p className="text-sm leading-relaxed" style={{ color: '#5c3d2e' }}>
-              <span className="font-semibold">Founding</span> pays for itself at $200/month in orders.
-              At $1,000/month, Founding saves you $50 versus Free. At $3,000/month, $150.
-              And the rates are locked — they never go up.
+              <span className="font-semibold">Founding</span> pays for itself at ~$467/month in orders — at that volume the 3% commission saving (7% vs 10% Free) covers the $14 fee.
+              At $1,000/month, Founding saves you $16 net versus Free. At $3,000/month, $76.
+              And your rate is locked for three years — it won't rise even if Whiskly raises pricing for new bakers.
             </p>
           </div>
         </div>
