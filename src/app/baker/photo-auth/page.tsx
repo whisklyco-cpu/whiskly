@@ -1,16 +1,15 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Logo } from '@/components/Logo'
-import Link from 'next/link'
 
 export default function PhotoAuthPage() {
   const router = useRouter()
   const [baker, setBaker] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [step, setStep] = useState(1) // 1 = process shots, 2 = video (founding only), 3 = affidavit
+  const [step, setStep] = useState(1) // 1 = process shots, 2 = affidavit
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -18,12 +17,7 @@ export default function PhotoAuthPage() {
   const [processShots, setProcessShots] = useState<Record<string, File | null>>({})
   const [processShotUploading, setProcessShotUploading] = useState<Record<string, boolean>>({})
 
-  // Step 2: verification video
-  const [videoFile, setVideoFile] = useState<File | null>(null)
-  const [videoUploading, setVideoUploading] = useState(false)
-  const [videoUrl, setVideoUrl] = useState<string | null>(null)
-
-  // Step 3: affidavit
+  // Step 2: affidavit
   const [agreed, setAgreed] = useState(false)
 
   useEffect(() => {
@@ -75,22 +69,6 @@ export default function PhotoAuthPage() {
     setProcessShotUploading(prev => ({ ...prev, [specialty]: false }))
   }
 
-  async function uploadVideo(file: File) {
-    setVideoUploading(true)
-    const ext = file.name.split('.').pop()
-    const path = `photo-auth/${baker.id}/verification-video.${ext}`
-    const { error: upErr } = await supabase.storage.from('baker-photos').upload(path, file, { upsert: true })
-    if (upErr) {
-      setError('Video upload failed: ' + upErr.message)
-      setVideoUploading(false)
-      return
-    }
-    const { data: { publicUrl } } = supabase.storage.from('baker-photos').getPublicUrl(path)
-    setVideoUrl(publicUrl)
-    setVideoFile(file)
-    setVideoUploading(false)
-  }
-
   async function handleComplete() {
     if (!agreed) return
     setSubmitting(true)
@@ -101,8 +79,6 @@ export default function PhotoAuthPage() {
       photo_auth_affidavit_signed_at: now,
       photo_auth_completed_at: now,
     }
-    if (videoUrl) updates.verification_video_url = videoUrl
-
     const { error: updateErr } = await supabase
       .from('bakers')
       .update(updates)
@@ -118,8 +94,7 @@ export default function PhotoAuthPage() {
   }
 
   const allProcessShotsUploaded = Object.values(processShots).every(v => v !== null)
-  const step2Required = baker?.is_founding_baker === true
-  const totalSteps = step2Required ? 3 : 2
+  const totalSteps = 2
 
   if (loading) {
     return (
@@ -179,7 +154,7 @@ export default function PhotoAuthPage() {
             <h2 className="text-lg font-bold mb-2" style={{ color: '#2d1a0e' }}>Step 1: Process shots</h2>
             <p className="text-sm leading-relaxed mb-6" style={{ color: '#5c3d2e' }}>
               Upload at least one process shot for each category you list. A process shot is any photo of the item
-              being made — raw ingredients, you in your kitchen with the item, tools and partial components. Final
+              being made: raw ingredients, you in your kitchen with the item, tools and partial components. Final
               product photos do not count.
             </p>
             <div className="flex flex-col gap-5">
@@ -216,7 +191,7 @@ export default function PhotoAuthPage() {
               ))}
             </div>
             <button
-              onClick={() => setStep(step2Required ? 2 : 3)}
+              onClick={() => setStep(2)}
               disabled={!allProcessShotsUploaded}
               className="mt-8 w-full py-3 rounded-xl font-semibold text-sm text-white"
               style={{ backgroundColor: allProcessShotsUploaded ? '#2d1a0e' : '#c4a882', cursor: allProcessShotsUploaded ? 'pointer' : 'not-allowed' }}
@@ -226,50 +201,11 @@ export default function PhotoAuthPage() {
           </div>
         )}
 
-        {/* STEP 2: Verification video (Founding bakers only) */}
-        {step === 2 && step2Required && (
-          <div className="bg-white rounded-2xl p-8 shadow-sm">
-            <h2 className="text-lg font-bold mb-2" style={{ color: '#2d1a0e' }}>Step 2: Verification video</h2>
-            <p className="text-sm leading-relaxed mb-2" style={{ color: '#5c3d2e' }}>
-              As a Founding Baker, upload a 15–30 second video of yourself in your workspace. This does not need to
-              be polished — just you, your kitchen, and a quick introduction. It confirms you are a real baker
-              working from a real space.
-            </p>
-            <p className="text-xs mb-6" style={{ color: '#9c7b6b' }}>Max file size: 100MB. Accepted formats: mp4, mov, webm.</p>
-            {videoFile ? (
-              <div className="px-4 py-3 rounded-xl text-sm mb-6" style={{ backgroundColor: '#f0fdf4', border: '1px solid #86efac' }}>
-                <span style={{ color: '#166534' }}>✓ {videoFile.name} uploaded</span>
-              </div>
-            ) : (
-              <label className="block mb-6">
-                <div className="px-4 py-6 rounded-xl text-sm text-center cursor-pointer border-2 border-dashed" style={{ borderColor: '#e0d5cc', color: '#9c7b6b' }}>
-                  {videoUploading ? 'Uploading…' : 'Click to upload your verification video'}
-                </div>
-                <input
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  disabled={videoUploading}
-                  onChange={e => e.target.files?.[0] && uploadVideo(e.target.files[0])}
-                />
-              </label>
-            )}
-            <button
-              onClick={() => setStep(3)}
-              disabled={!videoFile}
-              className="w-full py-3 rounded-xl font-semibold text-sm text-white"
-              style={{ backgroundColor: videoFile ? '#2d1a0e' : '#c4a882', cursor: videoFile ? 'pointer' : 'not-allowed' }}
-            >
-              Continue
-            </button>
-          </div>
-        )}
-
-        {/* STEP 3: Affidavit */}
-        {step === (step2Required ? 3 : 2) && (
+        {/* STEP 2: Affidavit */}
+        {step === 2 && (
           <div className="bg-white rounded-2xl p-8 shadow-sm">
             <h2 className="text-lg font-bold mb-4" style={{ color: '#2d1a0e' }}>
-              Step {step2Required ? 3 : 2}: Confirm your work
+              Step 2: Confirm your work
             </h2>
             <div className="rounded-xl p-5 mb-6 text-sm leading-relaxed" style={{ backgroundColor: '#faf8f6', border: '1px solid #e0d5cc', color: '#5c3d2e' }}>
               I confirm that all photos uploaded to my Whiskly profile are of work I personally created. I

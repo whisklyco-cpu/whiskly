@@ -1068,7 +1068,7 @@ function PhotoAuthReviewTable() {
     async function load() {
       const { data } = await supabase
         .from('bakers')
-        .select('id, business_name, email, is_founding_baker, photo_auth_completed_at, photo_auth_affidavit_signed_at, verification_video_url, photo_auth_admin_verified_at')
+        .select('id, business_name, email, is_founding_baker, photo_auth_completed_at, photo_auth_affidavit_signed_at, photo_auth_admin_verified_at')
         .not('photo_auth_completed_at', 'is', null)
         .is('photo_auth_admin_verified_at', null)
         .order('photo_auth_completed_at', { ascending: true })
@@ -1131,20 +1131,6 @@ function PhotoAuthReviewTable() {
                 : '—'}
             </div>
           </div>
-          {baker.verification_video_url && (
-            <div className="mt-3">
-              <p className="text-xs font-semibold mb-1" style={{ color: '#2d1a0e' }}>Verification video:</p>
-              <a
-                href={baker.verification_video_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs underline"
-                style={{ color: '#8B4513' }}
-              >
-                View video
-              </a>
-            </div>
-          )}
           <div className="mt-3 flex gap-3">
             <a
               href={`https://images.google.com/searchbyimage?image_url=${encodeURIComponent('https://qtketkbvfjduuysyqzld.supabase.co/storage/v1/object/public/baker-photos/' + baker.id)}`}
